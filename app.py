@@ -8,6 +8,36 @@ st.set_page_config(
     layout="wide"
 )
 
+# ======================
+# 🔐 로그인 체크
+# ======================
+def check_password():
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+
+    if st.session_state.authenticated:
+        return True
+
+    st.markdown("## 🔒 로그인")
+    pwd = st.text_input(
+        "비밀번호를 입력하세요",
+        type="password",
+        placeholder="비밀번호 입력"
+    )
+
+    if st.button("로그인"):
+        if pwd == st.secrets["auth"]["password"]:
+            st.session_state.authenticated = True
+            st.rerun()
+        else:
+            st.error("비밀번호가 올바르지 않습니다.")
+
+    return False
+
+
+if not check_password():
+    st.stop()
+
 st.title("MLB 키즈 공식몰 분석 대시보드")
 
 # ======================
@@ -16,6 +46,8 @@ st.title("MLB 키즈 공식몰 분석 대시보드")
 c1, c2 = st.columns(2)
 start_dt = c1.date_input("시작일", value=date.today().replace(day=1))
 end_dt = c2.date_input("종료일", value=date.today())
+
+st.caption("대량 데이터 조회 시 로딩 지연이 발생할 수 있습니다.")
 
 params = {
     "start_date": start_dt.strftime("%Y%m%d"),
@@ -66,7 +98,6 @@ def load_kids_cross_revenue(p):
 def load_adult_cross_revenue(p):
     return run_sql_file("src/sql/section5_adult_revenue_cross.sql", p)
 
-
 # ======================
 # KPI 표시용 함수
 # ======================
@@ -87,7 +118,6 @@ def render_kpi(df, value_col, order):
         val = int(value_map.get(k, 0))
         pct = round((val / total) * 100) if total > 0 else 0
         st.write(f"{k} {pct}% ({val:,})")
-
 
 # ======================
 # 표 포맷 유틸
@@ -133,7 +163,6 @@ def format_df_for_display(df: pd.DataFrame, money_cols=None, int_cols=None, pct_
 
     return out
 
-
 # ======================
 # 섹션5 카드 출력(비중 + 괄호 매출)
 # ======================
@@ -144,16 +173,12 @@ def render_cross_box(title: str, df: pd.DataFrame):
         st.info("데이터가 없습니다.")
         return
 
-    # 컬럼 표준화
     cols = {c.lower(): c for c in df.columns}
     ad_col = cols.get("ad_type", "ad_type")
     pct_col = cols.get("pct", "pct")
     rev_col = cols.get("revenue", "revenue")
 
-    # 원하는 순서
     order = ["키즈 광고", "성인 광고"]
-
-    # dict화
     m = {r[ad_col]: {"pct": r[pct_col], "rev": r[rev_col]} for _, r in df.iterrows()}
 
     for k in order:
@@ -163,7 +188,6 @@ def render_cross_box(title: str, df: pd.DataFrame):
 
     st.caption("Raw Data")
     st.dataframe(df, use_container_width=True, hide_index=True)
-
 
 # ======================
 # 실행
@@ -182,13 +206,9 @@ if st.button("조회"):
         kids_cat_df = load_kids_revenue_top10_category(params)
         kids_promo_df = load_kids_promo_top10(params)
 
-        # ✅ 섹션5 추가 로드
         kids_cross_df = load_kids_cross_revenue(params)
         adult_cross_df = load_adult_cross_revenue(params)
 
-    # ======================
-    # KPI 3단
-    # ======================
     col1, col2, col3 = st.columns(3)
 
     with col1:
@@ -209,9 +229,6 @@ if st.button("조회"):
         st.caption("Raw Data")
         st.dataframe(revenue_df, use_container_width=True, hide_index=True)
 
-    # ======================
-    # 섹션 2
-    # ======================
     st.divider()
     st.subheader("키즈 전환 상품 기준 상세 유입 소스/매체 TOP 10")
     kids_sm_show = format_df_for_display(
@@ -221,9 +238,6 @@ if st.button("조회"):
     )
     st.dataframe(kids_sm_show, use_container_width=True, hide_index=True)
 
-    # ======================
-    # 섹션 3
-    # ======================
     st.divider()
     left, right = st.columns(2)
 
@@ -244,9 +258,6 @@ if st.button("조회"):
         )
         st.dataframe(kids_views_show, use_container_width=True, hide_index=True)
 
-    # ======================
-    # 섹션 4
-    # ======================
     st.divider()
     left2, right2 = st.columns(2)
 
@@ -274,9 +285,6 @@ if st.button("조회"):
         )
         st.dataframe(kids_promo_show, use_container_width=True, hide_index=True)
 
-    # ======================
-    # 섹션 5 (✅ 이번 추가)
-    # ======================
     st.divider()
     st.subheader("키즈/성인 광고 통한 교차 구매 비중")
 
