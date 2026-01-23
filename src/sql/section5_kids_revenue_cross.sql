@@ -12,9 +12,9 @@ WITH purchase_kids AS (
        LATERAL FLATTEN(input => e.EVENT_PARAMS) ep,
        LATERAL FLATTEN(input => e.ITEMS) it
   WHERE e.P_BRAND = 'M'
-    AND e.P_DATE BETWEEN %s AND %s
+    AND e.P_DATE BETWEEN ? AND ?
     AND e.EVENT_NAME = 'purchase'
-    AND it.value:item_id::STRING LIKE '7%%'
+    AND it.value:item_id::STRING LIKE '7%'
   GROUP BY
     e.USER_PSEUDO_ID, e.EVENT_TIMESTAMP,
     it.value:item_revenue::NUMBER, it.value:price::NUMBER, it.value:quantity::NUMBER
@@ -31,7 +31,7 @@ pv AS (
     ) AS campaign
   FROM FNF.STRG_GA.EVENTS e
   WHERE e.P_BRAND = 'M'
-    AND e.P_DATE BETWEEN %s AND %s
+    AND e.P_DATE BETWEEN ? AND ?
     AND e.EVENT_NAME IN ('page_view','session_start')
 ),
 
