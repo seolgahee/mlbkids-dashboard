@@ -1,4 +1,4 @@
-WITH purchase_adult AS (
+WITH purchase_kids AS (
   SELECT
     e.USER_PSEUDO_ID,
     MAX(IFF(ep.value:key::STRING = 'ga_session_id',
@@ -14,7 +14,7 @@ WITH purchase_adult AS (
   WHERE e.P_BRAND = 'M'
     AND e.P_DATE BETWEEN %(start_date)s AND %(end_date)s
     AND e.EVENT_NAME = 'purchase'
-    AND it.value:item_id::STRING LIKE '3%%'
+    AND it.value:item_id::STRING LIKE '7%%'
   GROUP BY
     e.USER_PSEUDO_ID, e.EVENT_TIMESTAMP,
     it.value:item_revenue::NUMBER, it.value:price::NUMBER, it.value:quantity::NUMBER
@@ -63,7 +63,7 @@ joined AS (
   SELECT
     p.revenue,
     d.campaign
-  FROM purchase_adult p
+  FROM purchase_kids p
   JOIN session_dim d
     ON p.USER_PSEUDO_ID = d.USER_PSEUDO_ID
    AND p.session_id     = d.session_id
@@ -88,7 +88,7 @@ tot AS (
 )
 
 SELECT
-  '성인 매출' AS area,
+  '키즈 매출' AS area,
   ad_type,
   revenue,
   ROUND( (revenue / NULLIF(total_revenue, 0)) * 100, 0 ) AS pct
