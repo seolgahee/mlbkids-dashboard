@@ -235,7 +235,8 @@ if st.button("조회"):
       
 
     st.divider()
-    st.subheader("키즈 전환 상품 기준 상세 유입 소스/매체 TOP 10")
+    st.subheader("키즈 상품 기준 유입 사용자 TOP 10")
+    st.caption("*키즈 상품(상품ID 7%)을 1회 이상 조회 또는 구매한 사용자 기준")
     kids_sm_show = format_df_for_display(
         kids_sm_df,
         money_cols=["REVENUE", "revenue"],
