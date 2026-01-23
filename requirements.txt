@@ -4,5 +4,3 @@ pandas
 pyarrow
 plotly
 python-dotenv
-snowflake-sqlalchemy
-SQLAlchemy
