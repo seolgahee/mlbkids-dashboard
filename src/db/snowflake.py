@@ -23,8 +23,10 @@ def run_sql_file(sql_path: str, params: dict) -> pd.DataFrame:
     conn = get_conn()
     cur = conn.cursor()
     try:
-        # ✅ 반드시 params 전달
-        cur.execute(sql, params)
+        cur.execute(
+            sql,
+            (params["start_date"], params["end_date"])  # ✅ tuple
+        )
         return cur.fetch_pandas_all()
     finally:
         cur.close()
