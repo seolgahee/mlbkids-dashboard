@@ -218,16 +218,19 @@ if st.button("조회"):
 
     with col1:
         st.subheader("총 사용자수")
+        st.caption("*전체 기준")
         render_kpi(users_df, value_col="USERS", order=["Non-paid", "키즈 광고", "성인 광고"])
        
 
     with col2:
         st.subheader("구매한 상품 (구매수)")
+        st.caption("*키즈 전환 기준")
         render_kpi(qty_df, value_col="PURCHASE_QTY", order=["키즈 광고가 아닌것", "키즈 광고"])
       
 
     with col3:
         st.subheader("상품 수익 (매출)")
+        st.caption("*키즈 전환 기준")
         render_kpi(revenue_df, value_col="REVENUE", order=["키즈 광고가 아닌것", "키즈 광고"])
       
 
