@@ -1,20 +1,15 @@
 WITH purchase_kids AS (
   SELECT
     e.USER_PSEUDO_ID,
-    MAX(
-      IFF(
-        ep.value:key::STRING = 'ga_session_id',
-        ep.value:value:int_value::NUMBER,
-        NULL
-      )
-    ) AS session_id,
+    MAX(IFF(ep.value:key::STRING = 'ga_session_id',
+            ep.value:value:int_value::NUMBER, NULL)) AS session_id,
 
-    -- 키즈 상품 매출
+    /* 키즈 전환 매출 */
     SUM(
       COALESCE(
         it.value:item_revenue::NUMBER,
-        COALESCE(it.value:price::NUMBER, 0)
-        * COALESCE(it.value:quantity::NUMBER, 1)
+        (COALESCE(it.value:price::NUMBER, 0) * COALESCE(it.value:quantity::NUMBER, 1)),
+        0
       )
     ) AS revenue
 
@@ -24,7 +19,7 @@ WITH purchase_kids AS (
   WHERE e.P_BRAND = 'M'
     AND e.P_DATE BETWEEN %(start_date)s AND %(end_date)s
     AND e.EVENT_NAME = 'purchase'
-    AND it.value:item_id::STRING LIKE '7%%'   -- ✅ 키즈 상품
+    AND it.value:item_id::STRING LIKE '7%%'     -- ✅ 키즈 상품만
   GROUP BY e.USER_PSEUDO_ID, e.EVENT_TIMESTAMP
   HAVING session_id IS NOT NULL
 ),
@@ -32,13 +27,8 @@ WITH purchase_kids AS (
 session_touch AS (
   SELECT
     e.USER_PSEUDO_ID,
-    MAX(
-      IFF(
-        ep.value:key::STRING = 'ga_session_id',
-        ep.value:value:int_value::NUMBER,
-        NULL
-      )
-    ) AS session_id,
+    MAX(IFF(ep.value:key::STRING = 'ga_session_id',
+            ep.value:value:int_value::NUMBER, NULL)) AS session_id,
     e.EVENT_TIMESTAMP,
 
     COALESCE(
@@ -61,11 +51,7 @@ session_touch AS (
   WHERE e.P_BRAND = 'M'
     AND e.P_DATE BETWEEN %(start_date)s AND %(end_date)s
     AND e.EVENT_NAME IN ('session_start', 'page_view')
-  GROUP BY
-    e.USER_PSEUDO_ID,
-    e.EVENT_TIMESTAMP,
-    e.COLLECTED_TRAFFIC_SOURCE,
-    e.TRAFFIC_SOURCE
+  GROUP BY e.USER_PSEUDO_ID, e.EVENT_TIMESTAMP, e.COLLECTED_TRAFFIC_SOURCE, e.TRAFFIC_SOURCE
   HAVING session_id IS NOT NULL
 ),
 
@@ -73,9 +59,9 @@ session_dim AS (
   SELECT
     USER_PSEUDO_ID,
     session_id,
-    COALESCE(NULLIF(source, ''), '(direct)')  AS source,
-    COALESCE(NULLIF(medium, ''), '(none)')    AS medium,
-    COALESCE(NULLIF(campaign, ''), '')        AS campaign
+    COALESCE(NULLIF(source,''), '(not set)')   AS source,
+    COALESCE(NULLIF(medium,''), '(not set)')   AS medium,
+    COALESCE(NULLIF(campaign,''), '(not set)') AS campaign
   FROM session_touch
   QUALIFY ROW_NUMBER() OVER (
     PARTITION BY USER_PSEUDO_ID, session_id
@@ -84,31 +70,22 @@ session_dim AS (
 )
 
 SELECT
-  '#' || ROW_NUMBER() OVER (ORDER BY SUM(p.revenue) DESC) AS 순위,
-
-  d.source || ' / ' || d.medium AS "소스 / 매체",
+  d.source || ' / ' || d.medium AS source_medium,
 
   CASE
-    WHEN LEFT(UPPER(TRIM(d.campaign)), 2) IN ('I_', 'M_')
-      THEN '광고'
-    WHEN LOWER(d.source) = '(direct)' AND LOWER(d.medium) = '(none)'
-      THEN '직접'
+    WHEN LEFT(UPPER(TRIM(d.campaign)), 2) IN ('I_', 'M_') THEN '광고'
+    WHEN LOWER(d.source) = '(direct)' AND LOWER(d.medium) = '(none)' THEN '직접'
     ELSE '자연'
-  END AS "유입 유형",
+  END AS inflow_type,
 
-  COUNT(DISTINCT d.session_id) AS "세션 수",
-
-  SUM(p.revenue) AS "매출"
+  COUNT(DISTINCT p.USER_PSEUDO_ID || '-' || p.session_id) AS sessions,
+  SUM(p.revenue) AS revenue
 
 FROM purchase_kids p
 JOIN session_dim d
   ON p.USER_PSEUDO_ID = d.USER_PSEUDO_ID
  AND p.session_id     = d.session_id
 
-GROUP BY
-  d.source,
-  d.medium,
-  d.campaign
-
-ORDER BY 매출 DESC
+GROUP BY 1,2
+ORDER BY revenue DESC, sessions DESC
 LIMIT 10;
