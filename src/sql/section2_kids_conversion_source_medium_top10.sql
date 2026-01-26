@@ -1,5 +1,6 @@
 /* 키즈 상품(view_item) 포함 세션 기준: 소스/매체 TOP 10
-   + 유입유형(자연/광고/직접) + 매출 기준 정렬 */
+   + 유입유형(자연/광고/직접) + 매출 기준 정렬
+   ✅ B안 확장: 특정 소스/매체는 무조건 '광고'로 고정 (datarize/brandmessage, kakaofriend/message 등) */
 
 WITH kids_view_sessions AS (
   SELECT
@@ -121,11 +122,28 @@ SELECT
   /* 소스/매체 */
   COALESCE(d.source,'(not set)') || ' / ' || COALESCE(d.medium,'(not set)') AS source_medium,
 
-  /* ✅ 유입유형 */
+  /* ✅ 유입유형 (B안 확장) */
   CASE
-    WHEN LEFT(UPPER(TRIM(d.campaign)), 2) IN ('I_', 'M_') THEN '광고'
+    /* 1) 무조건 광고로 고정할 소스/매체 */
+    WHEN LOWER(COALESCE(d.source,'')) = 'datarize'
+     AND LOWER(COALESCE(d.medium,'')) = 'brandmessage' THEN '광고'
+
+    WHEN LOWER(COALESCE(d.source,'')) = 'kakaofriend'
+     AND LOWER(COALESCE(d.medium,'')) = 'message' THEN '광고'
+
+    /* 필요하면 여기 계속 추가 (예: kakaofriend/smart_chat도 광고로 고정하고 싶으면 아래 주석 해제)
+    WHEN LOWER(COALESCE(d.source,'')) = 'kakaofriend'
+     AND LOWER(COALESCE(d.medium,'')) = 'smart_chat' THEN '광고'
+    */
+
+    /* 2) 캠페인 네이밍 규칙(I_/M_)이면 광고 */
+    WHEN LEFT(UPPER(TRIM(COALESCE(d.campaign,''))), 2) IN ('I_', 'M_') THEN '광고'
+
+    /* 3) direct/none이면 직접 */
     WHEN LOWER(COALESCE(d.source,'(not set)')) = '(direct)'
      AND LOWER(COALESCE(d.medium,'(not set)')) = '(none)' THEN '직접'
+
+    /* 4) 그 외 자연 */
     ELSE '자연'
   END AS inflow_type,
 
