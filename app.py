@@ -1,5 +1,5 @@
 import streamlit as st
-from datetime import date
+from datetime import date, timedelta
 from src.db.snowflake import run_sql_file
 import pandas as pd
 
@@ -46,13 +46,27 @@ if not check_password():
 st.title("MLB 키즈 공식몰 분석 대시보드")
 
 # ======================
-# 기간 선택
+# 기간 선택 (✅ 종료일 기준 최대 7일)
 # ======================
 c1, c2 = st.columns(2)
-start_dt = c1.date_input("시작일", value=date.today().replace(day=1))
+
 end_dt = c2.date_input("종료일", value=date.today())
 
-st.caption("대량 데이터 조회 시 로딩 지연이 발생할 수 있습니다.")
+min_start = end_dt - timedelta(days=6)  # 포함 7일(6일 전~당일)
+start_dt = c1.date_input(
+    "시작일 (최대 7일)",
+    value=min_start,
+    min_value=min_start,
+    max_value=end_dt
+)
+
+# 방어 로직: 종료일 변경으로 start_dt가 범위 밖이면 보정
+if start_dt < min_start:
+    start_dt = min_start
+if start_dt > end_dt:
+    start_dt = end_dt
+
+st.caption("조회 기간은 최대 7일(포함)까지 선택 가능합니다. 대량 데이터 조회 시 로딩 지연이 발생할 수 있습니다.")
 
 params = {
     "start_date": start_dt.strftime("%Y%m%d"),
@@ -168,7 +182,6 @@ def format_df_for_display(df: pd.DataFrame, money_cols=None, int_cols=None, pct_
 
     return out
 
-
 # ======================
 # 섹션5 카드 출력(비중 + 괄호 매출)
 # ======================
@@ -191,8 +204,6 @@ def render_cross_box(title: str, df: pd.DataFrame):
         pct = m.get(k, {}).get("pct", 0)
         rev = m.get(k, {}).get("rev", 0)
         st.write(f"{k} {fmt_pct(pct)} ({fmt_won(rev)})")
-
-  
 
 # ======================
 # 실행
@@ -220,19 +231,16 @@ if st.button("조회"):
         st.subheader("총 사용자수")
         st.caption("*전체 기준")
         render_kpi(users_df, value_col="USERS", order=["Non-paid", "키즈 광고", "성인 광고"])
-       
 
     with col2:
         st.subheader("구매한 상품 (구매수)")
         st.caption("*키즈 전환 기준")
         render_kpi(qty_df, value_col="PURCHASE_QTY", order=["키즈 광고가 아닌것", "키즈 광고"])
-      
 
     with col3:
         st.subheader("상품 수익 (매출)")
         st.caption("*키즈 전환 기준")
         render_kpi(revenue_df, value_col="REVENUE", order=["키즈 광고가 아닌것", "키즈 광고"])
-      
 
     st.divider()
     st.subheader("키즈 상품 기준 유입 사용자 TOP 10")
@@ -255,7 +263,6 @@ if st.button("조회"):
             int_cols=["QUANTITY", "quantity", "RANK", "rank"]
         )
         st.dataframe(kids_perf_show, use_container_width=True, hide_index=True)
-       
 
     with right:
         st.subheader("키즈 상품 조회수 Top10")
@@ -264,7 +271,6 @@ if st.button("조회"):
             int_cols=["VIEW_COUNT", "view_count", "RANK", "rank"]
         )
         st.dataframe(kids_views_show, use_container_width=True, hide_index=True)
-        
 
     st.divider()
     left2, right2 = st.columns(2)
@@ -277,7 +283,6 @@ if st.button("조회"):
             int_cols=["QUANTITY", "quantity", "RANK", "rank"]
         )
         st.dataframe(kids_cat_show, use_container_width=True, hide_index=True)
-       
 
     with right2:
         st.subheader("키즈 기획전 Top10")
@@ -293,7 +298,6 @@ if st.button("조회"):
             pct_cols=["PURCHASE_CVR_PCT", "purchase_cvr_pct"]
         )
         st.dataframe(kids_promo_show, use_container_width=True, hide_index=True)
-      
 
     st.divider()
     st.subheader("키즈/성인 광고 통한 교차 구매 비중")
