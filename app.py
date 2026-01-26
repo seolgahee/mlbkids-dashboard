@@ -2,6 +2,7 @@ import streamlit as st
 from datetime import date, timedelta
 from src.db.snowflake import run_sql_file
 import pandas as pd
+import altair as alt
 
 st.set_page_config(
     page_title="MLB 키즈 공식몰 분석 대시보드",
@@ -117,27 +118,6 @@ def load_adult_cross_revenue(p):
     return run_sql_file("src/sql/section5_adult_revenue_cross.sql", p)
 
 # ======================
-# KPI 표시용 함수
-# ======================
-def render_kpi(df, value_col, order):
-    if df is None or df.empty:
-        for k in order:
-            st.write(f"{k} 0% (0)")
-        return
-
-    cols = {c.lower(): c for c in df.columns}
-    bcol = cols.get("bucket", "bucket")
-    vcol = cols.get(value_col.lower(), value_col)
-
-    total = df[vcol].sum()
-    value_map = {r[bcol]: r[vcol] for _, r in df.iterrows()}
-
-    for k in order:
-        val = int(value_map.get(k, 0))
-        pct = round((val / total) * 100) if total > 0 else 0
-        st.write(f"{k} {pct}% ({val:,})")
-
-# ======================
 # 표 포맷 유틸
 # ======================
 def fmt_int(x):
@@ -199,7 +179,61 @@ def format_df_for_display(df: pd.DataFrame, money_cols=None, int_cols=None, pct_
     return out
 
 # ======================
-# 섹션5 카드 출력
+# ✅ KPI 100% 가로 누적 막대 (두께 업)
+# ======================
+def render_kpi_100pct_bar(df, value_col, order, value_unit=""):
+    if df is None or df.empty:
+        st.info("데이터가 없습니다.")
+        return
+
+    cols = {c.lower(): c for c in df.columns}
+    bcol = cols.get("bucket", "bucket")
+    vcol = cols.get(value_col.lower(), value_col)
+
+    total = float(df[vcol].sum())
+
+    rows = []
+    for k in order:
+        val = float(df[df[bcol] == k][vcol].sum())
+        pct = (val / total * 100) if total > 0 else 0
+        rows.append({"구분": "전체", "유형": k, "비중": pct, "값": val})
+
+    chart_df = pd.DataFrame(rows)
+
+    default_palette = ["#D9D9D9", "#4F81BD", "#C0504D", "#9BBB59", "#8064A2"]
+    palette = default_palette[:len(order)]
+
+    chart = (
+        alt.Chart(chart_df)
+        .mark_bar(size=60)  # ✅ 더 두껍게
+        .encode(
+            x=alt.X("비중:Q", stack="normalize", axis=alt.Axis(format="%")),
+            y=alt.Y("구분:N", title=None),
+            color=alt.Color(
+                "유형:N",
+                scale=alt.Scale(domain=order, range=palette),
+                legend=alt.Legend(title=None)
+            ),
+            tooltip=[
+                alt.Tooltip("유형:N", title="유형"),
+                alt.Tooltip("비중:Q", title="비중(%)", format=".2f"),
+                alt.Tooltip("값:Q", title="값", format=",")
+            ]
+        )
+        .properties(height=160)  # ✅ 영역도 키워서 두께 체감 업
+    )
+
+    st.altair_chart(chart, use_container_width=True)
+
+    for r in rows:
+        if value_unit == "원":
+            val_txt = f"{int(r['값']):,}원"
+        else:
+            val_txt = f"{int(r['값']):,}{value_unit}"
+        st.write(f"• **{r['유형']}** : {r['비중']:.0f}% ({val_txt})")
+
+# ======================
+# ✅ 섹션5: 교차 구매 비중도 100% 가로 누적 막대로 시각화 + %/원 표시
 # ======================
 def render_cross_box(title: str, df: pd.DataFrame):
     st.markdown(f"### {title}")
@@ -210,16 +244,48 @@ def render_cross_box(title: str, df: pd.DataFrame):
 
     cols = {c.lower(): c for c in df.columns}
     ad_col = cols.get("ad_type", "ad_type")
-    pct_col = cols.get("pct", "pct")
     rev_col = cols.get("revenue", "revenue")
 
     order = ["키즈 광고", "성인 광고"]
-    m = {r[ad_col]: {"pct": r[pct_col], "rev": r[rev_col]} for _, r in df.iterrows()}
+    m = {str(r[ad_col]): float(r[rev_col]) for _, r in df.iterrows()}
 
+    total = sum(m.get(k, 0) for k in order)
+
+    rows = []
     for k in order:
-        pct = m.get(k, {}).get("pct", 0)
-        rev = m.get(k, {}).get("rev", 0)
-        st.write(f"{k} {fmt_pct0(pct)} ({fmt_won(rev)})")
+        val = float(m.get(k, 0))
+        pct = (val / total * 100) if total > 0 else 0
+        rows.append({"구분": "전체", "유형": k, "비중": pct, "값": val})
+
+    chart_df = pd.DataFrame(rows)
+
+    # KPI와 톤 맞춤(키즈=파랑, 성인=빨강)
+    palette = ["#4F81BD", "#C0504D"]
+
+    chart = (
+        alt.Chart(chart_df)
+        .mark_bar(size=60)  # ✅ 두껍게
+        .encode(
+            x=alt.X("비중:Q", stack="normalize", axis=alt.Axis(format="%")),
+            y=alt.Y("구분:N", title=None),
+            color=alt.Color(
+                "유형:N",
+                scale=alt.Scale(domain=order, range=palette),
+                legend=alt.Legend(title=None)
+            ),
+            tooltip=[
+                alt.Tooltip("유형:N", title="유형"),
+                alt.Tooltip("비중:Q", title="비중(%)", format=".2f"),
+                alt.Tooltip("값:Q", title="매출(원)", format=",")
+            ]
+        )
+        .properties(height=160)
+    )
+
+    st.altair_chart(chart, use_container_width=True)
+
+    for r in rows:
+        st.write(f"• **{r['유형']}** : {r['비중']:.0f}% ({int(r['값']):,}원)")
 
 # ======================
 # 컬럼명 한글 매핑
@@ -274,10 +340,8 @@ if st.button("조회"):
         revenue_df = load_revenue(params)
 
         kids_sm_df = load_kids_source_medium_top10(params)
-
         kids_perf_df = load_kids_top10_product_performance(params)
         kids_views_df = load_kids_top10_product_views(params)
-
         kids_cat_df = load_kids_revenue_top10_category(params)
         kids_promo_df = load_kids_promo_top10(params)
 
@@ -289,17 +353,32 @@ if st.button("조회"):
     with col1:
         st.subheader("총 사용자수")
         st.caption("*전체 기준")
-        render_kpi(users_df, value_col="USERS", order=["Non-paid", "키즈 광고", "성인 광고"])
+        render_kpi_100pct_bar(
+            users_df,
+            value_col="USERS",
+            order=["Non-paid", "키즈 광고", "성인 광고"],
+            value_unit="명"
+        )
 
     with col2:
         st.subheader("구매한 상품 (구매수)")
         st.caption("*키즈 전환 기준")
-        render_kpi(qty_df, value_col="PURCHASE_QTY", order=["키즈 광고가 아닌것", "키즈 광고"])
+        render_kpi_100pct_bar(
+            qty_df,
+            value_col="PURCHASE_QTY",
+            order=["키즈 광고가 아닌것", "키즈 광고"],
+            value_unit="건"
+        )
 
     with col3:
         st.subheader("상품 수익 (매출)")
         st.caption("*키즈 전환 기준")
-        render_kpi(revenue_df, value_col="REVENUE", order=["키즈 광고가 아닌것", "키즈 광고"])
+        render_kpi_100pct_bar(
+            revenue_df,
+            value_col="REVENUE",
+            order=["키즈 광고가 아닌것", "키즈 광고"],
+            value_unit="원"
+        )
 
     # 1) 키즈 상품 기준 유입 사용자 TOP 10
     st.divider()
@@ -367,13 +446,13 @@ if st.button("조회"):
                 "PURCHASE_SESSIONS", "purchase_sessions",
             ],
             pct_cols=["PURCHASE_CVR_PCT", "purchase_cvr_pct"],
-            pct_decimals=2  # ✅ 전환율 소수점 2자리
+            pct_decimals=2
         )
         if kids_promo_show is not None and not kids_promo_show.empty:
             kids_promo_show = kids_promo_show.rename(columns=COLMAP_KIDS_PROMO)
         st.dataframe(kids_promo_show, use_container_width=True, hide_index=True)
 
-    # 교차 구매 비중
+    # 교차 구매 비중 (✅ 여기까지도 차트로)
     st.divider()
     st.subheader("키즈/성인 광고 통한 교차 구매 비중")
 
