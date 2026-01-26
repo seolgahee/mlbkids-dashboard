@@ -30,7 +30,7 @@ WITH promo_map AS (
   UNION ALL SELECT 'event/1601', '소히조이 사전알림', '/display/promotions/event/1601'
 ),
 
--- page_location + session_id 추출 (page_view / view_item)
+-- page_location + session_id
 events_with_location AS (
   SELECT
     e.USER_PSEUDO_ID,
@@ -47,14 +47,13 @@ events_with_location AS (
   HAVING session_id IS NOT NULL
 ),
 
--- 기획전 페이지뷰 세션(기획전 세션의 '모집단')
+-- 기획전 유입 세션
 promo_pageviews AS (
   SELECT
     ev.USER_PSEUDO_ID,
     ev.session_id,
     pm.promo_key,
-    pm.promo_name,
-    COUNT(*) AS pageviews
+    pm.promo_name
   FROM events_with_location ev
   JOIN promo_map pm
     ON ev.EVENT_NAME='page_view'
@@ -62,7 +61,7 @@ promo_pageviews AS (
   GROUP BY ev.USER_PSEUDO_ID, ev.session_id, pm.promo_key, pm.promo_name
 ),
 
--- ✅ 세션 단위 상품조회 여부 (있으면 1)
+-- 세션 단위 상품 조회 여부
 promo_view_session AS (
   SELECT
     ev.USER_PSEUDO_ID,
@@ -73,7 +72,7 @@ promo_view_session AS (
   GROUP BY ev.USER_PSEUDO_ID, ev.session_id
 ),
 
--- ✅ 세션 단위 구매 여부 + 매출(키즈 7%)
+-- 세션 단위 구매 여부 + 매출 (키즈)
 promo_purchase_session AS (
   SELECT
     e.USER_PSEUDO_ID,
@@ -82,7 +81,7 @@ promo_purchase_session AS (
     SUM(
       COALESCE(
         it.value:item_revenue::NUMBER,
-        (COALESCE(it.value:price::NUMBER,0) * COALESCE(it.value:quantity::NUMBER,1)),
+        COALESCE(it.value:price::NUMBER,0) * COALESCE(it.value:quantity::NUMBER,1),
         0
       )
     ) AS revenue
@@ -97,13 +96,11 @@ promo_purchase_session AS (
   HAVING session_id IS NOT NULL
 ),
 
--- ✅ 기획전 단위 집계 (세션 기반)
+-- 기획전 단위 집계
 promo_agg AS (
   SELECT
     ppg.promo_key AS promo_no,
     ppg.promo_name,
-
-    SUM(ppg.pageviews) AS pageviews,
 
     COUNT(DISTINCT ppg.USER_PSEUDO_ID || '-' || ppg.session_id) AS promo_sessions,
 
@@ -128,7 +125,7 @@ promo_agg AS (
           /
           COUNT(DISTINCT CASE WHEN pvs.has_view_item = 1 THEN ppg.USER_PSEUDO_ID || '-' || ppg.session_id END)::FLOAT
         ) * 100
-      , 2)
+      , 1)
     END AS purchase_cvr_pct,
 
     SUM(COALESCE(pps.revenue,0)) AS revenue
@@ -151,8 +148,7 @@ SELECT
   view_sessions,
   purchase_sessions,
   purchase_cvr_pct,
-  revenue,
-  pageviews
+  revenue
 FROM promo_agg
 ORDER BY revenue DESC, view_sessions DESC
 LIMIT 10;
