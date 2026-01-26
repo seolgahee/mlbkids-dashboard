@@ -21,18 +21,17 @@ def get_conn():
 
 def _safe_replace_params(sql: str, params: dict) -> str:
     """
-    Snowflake connector pyformat(%(name)s) 대신,
-    우리가 직접 문자열 치환해서 % 관련 오류를 원천 제거.
+    Snowflake connector pyformat(%(name)s) 대신
+    문자열 치환 방식으로 % 관련 오류를 원천 차단
 
-    주의: params 값은 YYYYMMDD 숫자만 들어온다는 전제(현재 app.py 구조)
+    ⚠️ 전제
+    - start_date / end_date 는 YYYYMMDD 숫자 8자리
     """
     if not params:
         return sql
 
-    # start_date / end_date가 없으면 그대로
     if "start_date" in params:
         sd = str(params["start_date"])
-        # 숫자 8자리만 허용(안전장치)
         if not (sd.isdigit() and len(sd) == 8):
             raise ValueError("start_date must be YYYYMMDD digits")
         sql = sql.replace("%(start_date)s", f"'{sd}'")
@@ -49,15 +48,24 @@ def _safe_replace_params(sql: str, params: dict) -> str:
 def run_sql_file(sql_path: str, params: dict) -> pd.DataFrame:
     """
     SQL 파일을 읽어서 Snowflake에 실행 후 pandas DataFrame 반환
-    - % 포맷(pyformat) 사용 안 함 (재발 0)
+
+    ✔ params 직접 execute에 넘기지 않음
+    ✔ %(start_date)s / %(end_date)s 미치환 시 즉시 에러
     """
     sql = Path(sql_path).read_text(encoding="utf-8")
     sql = _safe_replace_params(sql, params)
 
+    # ✅ 파라미터 치환 누락 방어 (여기 걸리면 SQL 파일 문제)
+    if "%(start_date)s" in sql or "%(end_date)s" in sql:
+        raise ValueError(
+            "SQL params were not replaced. "
+            "Check %(start_date)s / %(end_date)s placeholders in SQL file."
+        )
+
     conn = get_conn()
     cur = conn.cursor()
     try:
-        cur.execute(sql)  # ✅ params 전달 X
+        cur.execute(sql)  # ❌ params 전달 금지
         return cur.fetch_pandas_all()
     finally:
         cur.close()
