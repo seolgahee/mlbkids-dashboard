@@ -18,7 +18,6 @@ def check_password():
     if st.session_state.authenticated:
         return True
 
-    # 로그인 화면 제목
     st.markdown("## 👶🏻MLB 키즈 공식몰 분석 대시보드👶🏻")
     st.caption("내부 전용 대시보드 · 무단 공유 금지")
     st.markdown("---")
@@ -60,13 +59,14 @@ start_dt = c1.date_input(
     max_value=end_dt
 )
 
-# 방어 로직: 종료일 변경으로 start_dt가 범위 밖이면 보정
+# 방어 로직
 if start_dt < min_start:
     start_dt = min_start
 if start_dt > end_dt:
     start_dt = end_dt
 
 st.caption("조회 기간은 최대 7일(포함)까지 선택 가능합니다. 대량 데이터 조회 시 로딩 지연이 발생할 수 있습니다.")
+st.caption("※ 최근 2일 데이터는 BigQuery 반영 지연으로 정확하지 않을 수 있습니다.")
 
 params = {
     "start_date": start_dt.strftime("%Y%m%d"),
@@ -108,7 +108,6 @@ def load_kids_revenue_top10_category(p):
 def load_kids_promo_top10(p):
     return run_sql_file("src/sql/section4_kids_promo_top10.sql", p)
 
-# ✅ 섹션5 (교차 구매 비중) - 키즈/성인 매출 분리
 @st.cache_data(ttl=600)
 def load_kids_cross_revenue(p):
     return run_sql_file("src/sql/section5_kids_revenue_cross.sql", p)
@@ -153,13 +152,25 @@ def fmt_won(x):
     except Exception:
         return x
 
-def fmt_pct(x):
+def fmt_pct0(x):
     try:
         return f"{float(x):.0f}%"
     except Exception:
         return x
 
-def format_df_for_display(df: pd.DataFrame, money_cols=None, int_cols=None, pct_cols=None):
+def fmt_pct1(x):
+    try:
+        return f"{float(x):.1f}%"
+    except Exception:
+        return x
+
+def fmt_pct2(x):
+    try:
+        return f"{float(x):.2f}%"
+    except Exception:
+        return x
+
+def format_df_for_display(df: pd.DataFrame, money_cols=None, int_cols=None, pct_cols=None, pct_decimals=0):
     if df is None or df.empty:
         return df
 
@@ -178,12 +189,17 @@ def format_df_for_display(df: pd.DataFrame, money_cols=None, int_cols=None, pct_
     if pct_cols:
         for c in pct_cols:
             if c in out.columns:
-                out[c] = out[c].apply(fmt_pct)
+                if pct_decimals == 2:
+                    out[c] = out[c].apply(fmt_pct2)
+                elif pct_decimals == 1:
+                    out[c] = out[c].apply(fmt_pct1)
+                else:
+                    out[c] = out[c].apply(fmt_pct0)
 
     return out
 
 # ======================
-# 섹션5 카드 출력(비중 + 괄호 매출)
+# 섹션5 카드 출력
 # ======================
 def render_cross_box(title: str, df: pd.DataFrame):
     st.markdown(f"### {title}")
@@ -203,7 +219,50 @@ def render_cross_box(title: str, df: pd.DataFrame):
     for k in order:
         pct = m.get(k, {}).get("pct", 0)
         rev = m.get(k, {}).get("rev", 0)
-        st.write(f"{k} {fmt_pct(pct)} ({fmt_won(rev)})")
+        st.write(f"{k} {fmt_pct0(pct)} ({fmt_won(rev)})")
+
+# ======================
+# 컬럼명 한글 매핑
+# ======================
+COLMAP_KIDS_SM = {
+    "SOURCE_MEDIUM": "소스/매체",
+    "INFLOW_TYPE": "유입 유형",
+    "SESSIONS": "세션수",
+    "REVENUE": "매출",
+}
+
+COLMAP_KIDS_PERF = {
+    "RANK": "순위",
+    "ITEM_ID": "상품코드",
+    "ITEM_NAME": "상품명",
+    "QUANTITY": "구매수량",
+    "REVENUE": "매출",
+}
+
+COLMAP_KIDS_VIEWS = {
+    "RANK": "순위",
+    "ITEM_ID": "상품코드",
+    "ITEM_NAME": "상품명",
+    "VIEW_COUNT": "조회수",
+}
+
+COLMAP_KIDS_CAT = {
+    "RANK": "순위",
+    "CATEGORY": "카테고리",
+    "QUANTITY": "구매수량",
+    "REVENUE": "매출",
+}
+
+COLMAP_KIDS_PROMO = {
+    "RANK": "순위",
+    "PROMO_NO": "구분",
+    "PROMO_NAME": "기획전명",
+    "PROMO_SESSIONS": "유입",
+    "VIEW_SESSIONS": "상품 조회",
+    "PURCHASE_SESSIONS": "구매",
+    "PURCHASE_CVR_PCT": "CVR",
+    "REVENUE": "매출",
+}
 
 # ======================
 # 실행
@@ -242,63 +301,79 @@ if st.button("조회"):
         st.caption("*키즈 전환 기준")
         render_kpi(revenue_df, value_col="REVENUE", order=["키즈 광고가 아닌것", "키즈 광고"])
 
+    # 1) 키즈 상품 기준 유입 사용자 TOP 10
     st.divider()
     st.subheader("키즈 상품 기준 유입 사용자 TOP 10")
     st.caption("*키즈 상품(상품ID 7%)을 1회 이상 조회 또는 구매한 사용자 기준")
+
     kids_sm_show = format_df_for_display(
         kids_sm_df,
         money_cols=["REVENUE", "revenue"],
         int_cols=["SESSIONS", "sessions"]
     )
+    if kids_sm_show is not None and not kids_sm_show.empty:
+        kids_sm_show = kids_sm_show.rename(columns=COLMAP_KIDS_SM)
     st.dataframe(kids_sm_show, use_container_width=True, hide_index=True)
 
+    # 2) 키즈 Top10 상품 성과 / 3) 키즈 상품 조회수 Top10
     st.divider()
     left, right = st.columns(2)
 
     with left:
-        st.subheader("키즈 Top10 상품 성과")
+        st.subheader("키즈 TOP 10 상품 성과")
         kids_perf_show = format_df_for_display(
             kids_perf_df,
             money_cols=["REVENUE", "revenue"],
             int_cols=["QUANTITY", "quantity", "RANK", "rank"]
         )
+        if kids_perf_show is not None and not kids_perf_show.empty:
+            kids_perf_show = kids_perf_show.rename(columns=COLMAP_KIDS_PERF)
         st.dataframe(kids_perf_show, use_container_width=True, hide_index=True)
 
     with right:
-        st.subheader("키즈 상품 조회수 Top10")
+        st.subheader("키즈 상품 조회수 TOP 10")
         kids_views_show = format_df_for_display(
             kids_views_df,
             int_cols=["VIEW_COUNT", "view_count", "RANK", "rank"]
         )
+        if kids_views_show is not None and not kids_views_show.empty:
+            kids_views_show = kids_views_show.rename(columns=COLMAP_KIDS_VIEWS)
         st.dataframe(kids_views_show, use_container_width=True, hide_index=True)
 
+    # 4) 키즈 매출 Top10 카테고리 / 5) 키즈 기획전 Top10
     st.divider()
     left2, right2 = st.columns(2)
 
     with left2:
-        st.subheader("키즈 매출 Top10 카테고리")
+        st.subheader("키즈 매출 TOP 10 카테고리")
         kids_cat_show = format_df_for_display(
             kids_cat_df,
             money_cols=["REVENUE", "revenue"],
             int_cols=["QUANTITY", "quantity", "RANK", "rank"]
         )
+        if kids_cat_show is not None and not kids_cat_show.empty:
+            kids_cat_show = kids_cat_show.rename(columns=COLMAP_KIDS_CAT)
         st.dataframe(kids_cat_show, use_container_width=True, hide_index=True)
 
     with right2:
-        st.subheader("키즈 기획전 Top10")
+        st.subheader("키즈 기획전 TOP 10")
         kids_promo_show = format_df_for_display(
             kids_promo_df,
             money_cols=["REVENUE", "revenue"],
             int_cols=[
-                "PAGEVIEWS", "pageviews",
-                "VIEW_ITEM_EVENTS", "view_item_events",
-                "PURCHASE_EVENTS", "purchase_events",
-                "RANK", "rank"
+                "RANK", "rank",
+                "PROMO_SESSIONS", "promo_sessions",
+                "VIEW_SESSIONS", "view_sessions",
+                "PURCHASE_SESSIONS", "purchase_sessions",
             ],
-            pct_cols=["PURCHASE_CVR_PCT", "purchase_cvr_pct"]
+            pct_cols=["PURCHASE_CVR_PCT", "purchase_cvr_pct"],
+            pct_decimals=2  # ✅ 전환율 소수점 2자리
         )
+        if kids_promo_show is not None and not kids_promo_show.empty:
+            kids_promo_show = kids_promo_show.rename(columns=COLMAP_KIDS_PROMO)
         st.dataframe(kids_promo_show, use_container_width=True, hide_index=True)
 
+    # 교차 구매 비중
     st.divider()
     st.subheader("키즈/성인 광고 통한 교차 구매 비중")
 

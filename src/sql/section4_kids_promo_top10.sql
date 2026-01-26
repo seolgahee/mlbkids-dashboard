@@ -30,7 +30,7 @@ WITH promo_map AS (
   UNION ALL SELECT 'event/1601', '소히조이 사전알림', '/display/promotions/event/1601'
 ),
 
--- page_location + session_id
+-- page_location + session_id (page_view / view_item)
 events_with_location AS (
   SELECT
     e.USER_PSEUDO_ID,
@@ -47,7 +47,7 @@ events_with_location AS (
   HAVING session_id IS NOT NULL
 ),
 
--- 기획전 유입 세션
+-- 기획전 유입 세션(모집단)
 promo_pageviews AS (
   SELECT
     ev.USER_PSEUDO_ID,
@@ -61,7 +61,7 @@ promo_pageviews AS (
   GROUP BY ev.USER_PSEUDO_ID, ev.session_id, pm.promo_key, pm.promo_name
 ),
 
--- 세션 단위 상품 조회 여부
+-- ✅ (세션) 상품조회 여부
 promo_view_session AS (
   SELECT
     ev.USER_PSEUDO_ID,
@@ -72,7 +72,7 @@ promo_view_session AS (
   GROUP BY ev.USER_PSEUDO_ID, ev.session_id
 ),
 
--- 세션 단위 구매 여부 + 매출 (키즈)
+-- ✅ (세션) 구매 여부 + 매출 (키즈)
 promo_purchase_session AS (
   SELECT
     e.USER_PSEUDO_ID,
@@ -96,12 +96,65 @@ promo_purchase_session AS (
   HAVING session_id IS NOT NULL
 ),
 
--- 기획전 단위 집계
+/* =========================
+   ✅ B안: 이벤트 기준 CVR
+   - 분모: 기획전 유입 세션 내 view_item 이벤트 수
+   - 분자: 기획전 유입 세션 내 purchase 이벤트 수 (키즈 상품 구매 이벤트)
+   ========================= */
+
+-- ✅ 분모: view_item 이벤트 수 (기획전 유입 세션 내)
+promo_view_item_events AS (
+  SELECT
+    ppg.promo_key,
+    ppg.promo_name,
+    COUNT(*) AS view_item_events
+  FROM promo_pageviews ppg
+  JOIN events_with_location ev
+    ON ppg.USER_PSEUDO_ID = ev.USER_PSEUDO_ID
+   AND ppg.session_id     = ev.session_id
+   AND ev.EVENT_NAME      = 'view_item'
+  GROUP BY ppg.promo_key, ppg.promo_name
+),
+
+-- ✅ 분자: purchase 이벤트 수 + 매출 (기획전 유입 세션 내, 키즈 상품만)
+promo_purchase_events AS (
+  SELECT
+    ppg.promo_key,
+    ppg.promo_name,
+
+    COUNT(DISTINCT e.USER_PSEUDO_ID || '-' ||
+      MAX(IFF(ep.value:key::STRING='ga_session_id', ep.value:value:int_value::NUMBER, NULL)) || '-' ||
+      e.EVENT_TIMESTAMP
+    ) AS purchase_events,
+
+    SUM(
+      COALESCE(
+        it.value:item_revenue::NUMBER,
+        COALESCE(it.value:price::NUMBER,0) * COALESCE(it.value:quantity::NUMBER,1),
+        0
+      )
+    ) AS revenue
+  FROM promo_pageviews ppg
+  JOIN FNF.STRG_GA.EVENTS e
+    ON ppg.USER_PSEUDO_ID = e.USER_PSEUDO_ID
+  , LATERAL FLATTEN(input => e.EVENT_PARAMS) ep
+  , LATERAL FLATTEN(input => e.ITEMS) it
+  WHERE e.P_BRAND='M'
+    AND e.P_DATE BETWEEN %(start_date)s AND %(end_date)s
+    AND e.EVENT_NAME='purchase'
+    AND LEFT(it.value:item_id::STRING, 1) = '7'
+    -- 구매 이벤트가 "해당 기획전 유입 세션"에서 발생한 것만
+    AND MAX(IFF(ep.value:key::STRING='ga_session_id', ep.value:value:int_value::NUMBER, NULL)) = ppg.session_id
+  GROUP BY ppg.promo_key, ppg.promo_name
+),
+
+-- ✅ 기획전 단위 집계
 promo_agg AS (
   SELECT
     ppg.promo_key AS promo_no,
     ppg.promo_name,
 
+    -- 세션 기반 지표(기존 유지)
     COUNT(DISTINCT ppg.USER_PSEUDO_ID || '-' || ppg.session_id) AS promo_sessions,
 
     COUNT(DISTINCT
@@ -116,28 +169,41 @@ promo_agg AS (
       END
     ) AS purchase_sessions,
 
+    -- 이벤트 기반 지표(B안)
+    COALESCE(pvie.view_item_events, 0) AS view_item_events,
+    COALESCE(ppe.purchase_events, 0)   AS purchase_events,
+
+    -- ✅ B안 CVR (소수점 2자리)
     CASE
-      WHEN COUNT(DISTINCT CASE WHEN pvs.has_view_item = 1 THEN ppg.USER_PSEUDO_ID || '-' || ppg.session_id END) = 0
-      THEN 0
+      WHEN COALESCE(pvie.view_item_events, 0) = 0 THEN 0
       ELSE ROUND(
-        (
-          COUNT(DISTINCT CASE WHEN pps.has_purchase = 1 THEN ppg.USER_PSEUDO_ID || '-' || ppg.session_id END)::FLOAT
-          /
-          COUNT(DISTINCT CASE WHEN pvs.has_view_item = 1 THEN ppg.USER_PSEUDO_ID || '-' || ppg.session_id END)::FLOAT
-        ) * 100
-      , 1)
+        (COALESCE(ppe.purchase_events, 0)::FLOAT / pvie.view_item_events::FLOAT) * 100
+      , 2)
     END AS purchase_cvr_pct,
 
-    SUM(COALESCE(pps.revenue,0)) AS revenue
+    -- 매출은 purchase 이벤트 기반 집계 값 사용 (세션 구매 매출과 거의 동일하지만 이벤트 기준이 더 일관됨)
+    COALESCE(ppe.revenue, 0) AS revenue
 
   FROM promo_pageviews ppg
   LEFT JOIN promo_view_session pvs
     ON ppg.USER_PSEUDO_ID = pvs.USER_PSEUDO_ID
    AND ppg.session_id     = pvs.session_id
+
   LEFT JOIN promo_purchase_session pps
     ON ppg.USER_PSEUDO_ID = pps.USER_PSEUDO_ID
    AND ppg.session_id     = pps.session_id
-  GROUP BY ppg.promo_key, ppg.promo_name
+
+  LEFT JOIN promo_view_item_events pvie
+    ON ppg.promo_key = pvie.promo_key
+
+  LEFT JOIN promo_purchase_events ppe
+    ON ppg.promo_key = ppe.promo_key
+
+  GROUP BY
+    ppg.promo_key, ppg.promo_name,
+    pvie.view_item_events,
+    ppe.purchase_events,
+    ppe.revenue
 )
 
 SELECT
