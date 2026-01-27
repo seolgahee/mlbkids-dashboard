@@ -1,5 +1,7 @@
 /* =========================
-   section4_kids_promo_top10.sql  (✅ URL 컬럼 promo_url 추가 / event 경로 수정)
+   section4_kids_promo_top10.sql
+   ✅ promo_url(절대 URL) 컬럼 추가
+   ✅ event 경로(url_key) 오류 수정
    ========================= */
 
 WITH promo_map AS (
@@ -154,10 +156,10 @@ purchase_sessions AS (
 SELECT
   ROW_NUMBER() OVER (ORDER BY COALESCE(ppe.revenue,0) DESC, COALESCE(sm.view_sessions,0) DESC) AS rank,
   sm.promo_key AS promo_no,
-  psn.promo_name,
+  pm.promo_name,
 
-  /* ✅ 절대 URL: 행별로 다름 */
-  'https://www.mlb-korea.com' || psn.url_key AS promo_url,
+  /* ✅ 절대 URL(행별 링크) */
+  'https://www.mlb-korea.com' || pm.url_key AS promo_url,
 
   sm.promo_sessions,
   sm.view_sessions,
@@ -168,8 +170,8 @@ SELECT
   END AS purchase_cvr_pct,
   COALESCE(ppe.revenue, 0) AS revenue
 FROM session_metrics sm
-JOIN (SELECT promo_key, promo_name, url_key FROM promo_map) psn
-  ON sm.promo_key = psn.promo_key
+JOIN promo_map pm
+  ON sm.promo_key = pm.promo_key
 LEFT JOIN view_item_events vie
   ON sm.promo_key = vie.promo_key
 LEFT JOIN promo_purchase_events ppe

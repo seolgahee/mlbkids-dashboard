@@ -1,6 +1,3 @@
-# =========================
-# app.py (✅ 기획전명 하이퍼링크 적용 포함 / 전체 통째로)
-# =========================
 import streamlit as st
 from datetime import date, timedelta
 from src.db.snowflake import run_sql_file
@@ -58,12 +55,11 @@ max_end = start_dt + timedelta(days=6)  # 포함 7일(시작일~+6)
 
 end_dt = c2.date_input(
     "종료일 (시작일과 같게 선택하면 하루치)",
-    value=start_dt,          # ✅ 하루치 기본
-    min_value=start_dt,      # ✅ 시작일 이전 선택 불가
-    max_value=max_end        # ✅ 최대 7일 제한
+    value=start_dt,
+    min_value=start_dt,
+    max_value=max_end
 )
 
-# 방어 로직
 if end_dt < start_dt:
     end_dt = start_dt
 if end_dt > max_end:
@@ -85,7 +81,6 @@ cache_day_key = date.today().strftime("%Y%m%d")
 
 # ======================
 # SQL 로더 (캐시)
-# - cache_day_key를 추가 인자로 받아 캐시 key 분리
 # ======================
 @st.cache_data(ttl=600)
 def load_users(p, _cache_key):
@@ -189,7 +184,7 @@ def format_df_for_display(df: pd.DataFrame, money_cols=None, int_cols=None, pct_
     return out
 
 # ======================
-# ✅ KPI 100% 가로 누적 막대 (두께 업)
+# ✅ KPI 100% 가로 누적 막대
 # ======================
 def render_kpi_100pct_bar(df, value_col, order, value_unit=""):
     if df is None or df.empty:
@@ -243,7 +238,7 @@ def render_kpi_100pct_bar(df, value_col, order, value_unit=""):
         st.write(f"• **{r['유형']}** : {r['비중']:.0f}% ({val_txt})")
 
 # ======================
-# ✅ 섹션5: 교차 구매 비중도 100% 가로 누적 막대로 시각화 + %/원 표시
+# ✅ 섹션5: 교차 구매 비중
 # ======================
 def render_cross_box(title: str, df: pd.DataFrame):
     st.markdown(f"### {title}")
@@ -298,8 +293,6 @@ def render_cross_box(title: str, df: pd.DataFrame):
 
 # ======================
 # 컬럼명 한글 매핑
-# ✅ 변경: 소스/매체 TOP10 테이블에 사용자수(USERS) 추가
-# ✅ 변경: 기획전 TOP10 테이블에 URL(PROMO_URL) 추가
 # ======================
 COLMAP_KIDS_SM = {
     "SOURCE_MEDIUM": "소스/매체",
@@ -331,11 +324,12 @@ COLMAP_KIDS_CAT = {
     "REVENUE": "매출",
 }
 
+# ✅ promo_url을 LinkColumn으로 쓸거라 컬럼 유지
 COLMAP_KIDS_PROMO = {
     "RANK": "순위",
     "PROMO_NO": "구분",
     "PROMO_NAME": "기획전명",
-    "PROMO_URL": "기획전 URL",  # ✅ 추가
+    "PROMO_URL": "기획전 링크",   # ✅ LinkColumn 대상
     "PROMO_SESSIONS": "유입",
     "VIEW_SESSIONS": "상품 조회",
     "PURCHASE_SESSIONS": "구매",
@@ -393,6 +387,7 @@ if st.button("조회"):
             value_unit="원"
         )
 
+    # 1) 키즈 상품 기준 소스/매체 성과 TOP 10
     st.divider()
     st.subheader("키즈 상품 기준 소스/매체 성과 TOP 10")
     st.caption("*키즈 상품(상품ID 7%)을 1회 이상 조회 또는 구매한 사용자 기준")
@@ -406,6 +401,7 @@ if st.button("조회"):
         kids_sm_show = kids_sm_show.rename(columns=COLMAP_KIDS_SM)
     st.dataframe(kids_sm_show, use_container_width=True, hide_index=True)
 
+    # 2) 키즈 Top10 상품 성과 / 3) 키즈 상품 조회수 Top10
     st.divider()
     left, right = st.columns(2)
 
@@ -430,6 +426,7 @@ if st.button("조회"):
             kids_views_show = kids_views_show.rename(columns=COLMAP_KIDS_VIEWS)
         st.dataframe(kids_views_show, use_container_width=True, hide_index=True)
 
+    # 4) 키즈 매출 Top10 카테고리 / 5) 키즈 기획전 Top10 (✅ LinkColumn 적용)
     st.divider()
     left2, right2 = st.columns(2)
 
@@ -446,6 +443,7 @@ if st.button("조회"):
 
     with right2:
         st.subheader("키즈 기획전 TOP 10")
+
         kids_promo_show = format_df_for_display(
             kids_promo_df,
             money_cols=["REVENUE", "revenue"],
@@ -461,19 +459,25 @@ if st.button("조회"):
         if kids_promo_show is not None and not kids_promo_show.empty:
             kids_promo_show = kids_promo_show.rename(columns=COLMAP_KIDS_PROMO)
 
-            # ✅ 기획전명에 행별 하이퍼링크 적용
-            if "기획전 URL" in kids_promo_show.columns and "기획전명" in kids_promo_show.columns:
-                kids_promo_show["기획전명"] = kids_promo_show.apply(
-                    lambda r: f"[{r['기획전명']}]({r['기획전 URL']})"
-                    if pd.notna(r["기획전 URL"]) and str(r["기획전 URL"]).strip() != ""
-                    else r["기획전명"],
-                    axis=1
-                )
-                # URL 컬럼은 표에서 숨김(원하면 drop 제거)
-                kids_promo_show = kids_promo_show.drop(columns=["기획전 URL"])
+            # ✅ 클릭 가능한 링크 컬럼 (새 탭/새 창은 브라우저 설정에 따름)
+            st.data_editor(
+                kids_promo_show,
+                use_container_width=True,
+                hide_index=True,
+                disabled=True,
+                column_config={
+                    "기획전 링크": st.column_config.LinkColumn(
+                        label="기획전 링크",
+                        help="클릭 시 해당 기획전으로 이동",
+                        display_text="바로가기",
+                        validate=r"^https?://.*",
+                    ),
+                }
+            )
+        else:
+            st.dataframe(kids_promo_show, use_container_width=True, hide_index=True)
 
-        st.dataframe(kids_promo_show, use_container_width=True, hide_index=True)
-
+    # 교차 구매 비중
     st.divider()
     st.subheader("키즈/성인 광고 통한 교차 구매 비중")
 
