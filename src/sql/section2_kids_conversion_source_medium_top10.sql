@@ -1,6 +1,7 @@
 /* 키즈 상품(view_item) 포함 세션 기준: 소스/매체 TOP 10
    + 유입유형(자연/광고/직접) + 매출 기준 정렬
-   ✅ B안 확장: 특정 소스/매체는 무조건 '광고'로 고정 (datarize/brandmessage, kakaofriend/message 등) */
+   ✅ 특정 소스/매체는 무조건 '광고'로 고정 (datarize/brandmessage, kakaofriend/message 등)
+   ✅ 사용자수(users) 컬럼 추가 */
 
 WITH kids_view_sessions AS (
   SELECT
@@ -131,11 +132,6 @@ SELECT
     WHEN LOWER(COALESCE(d.source,'')) = 'kakaofriend'
      AND LOWER(COALESCE(d.medium,'')) = 'message' THEN '광고'
 
-    /* 필요하면 여기 계속 추가 (예: kakaofriend/smart_chat도 광고로 고정하고 싶으면 아래 주석 해제)
-    WHEN LOWER(COALESCE(d.source,'')) = 'kakaofriend'
-     AND LOWER(COALESCE(d.medium,'')) = 'smart_chat' THEN '광고'
-    */
-
     /* 2) 캠페인 네이밍 규칙(I_/M_)이면 광고 */
     WHEN LEFT(UPPER(TRIM(COALESCE(d.campaign,''))), 2) IN ('I_', 'M_') THEN '광고'
 
@@ -146,6 +142,9 @@ SELECT
     /* 4) 그 외 자연 */
     ELSE '자연'
   END AS inflow_type,
+
+  /* ✅ 사용자수 */
+  COUNT(DISTINCT k.USER_PSEUDO_ID) AS users,
 
   /* 세션수 */
   COUNT(DISTINCT k.USER_PSEUDO_ID || '-' || k.session_id) AS sessions,

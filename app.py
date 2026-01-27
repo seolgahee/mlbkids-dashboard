@@ -295,10 +295,12 @@ def render_cross_box(title: str, df: pd.DataFrame):
 
 # ======================
 # 컬럼명 한글 매핑
+# ✅ 변경: 소스/매체 TOP10 테이블에 사용자수(USERS) 추가
 # ======================
 COLMAP_KIDS_SM = {
     "SOURCE_MEDIUM": "소스/매체",
     "INFLOW_TYPE": "유입 유형",
+    "USERS": "사용자수",   # ✅ 추가
     "SESSIONS": "세션수",
     "REVENUE": "매출",
 }
@@ -390,10 +392,11 @@ if st.button("조회"):
     st.subheader("키즈 상품 기준 소스/매체 성과 TOP 10")
     st.caption("*키즈 상품(상품ID 7%)을 1회 이상 조회 또는 구매한 사용자 기준")
 
+    # ✅ 변경: USERS 컬럼 포맷(정수) 추가
     kids_sm_show = format_df_for_display(
         kids_sm_df,
         money_cols=["REVENUE", "revenue"],
-        int_cols=["SESSIONS", "sessions"]
+        int_cols=["USERS", "users", "SESSIONS", "sessions"]  # ✅ users 추가
     )
     if kids_sm_show is not None and not kids_sm_show.empty:
         kids_sm_show = kids_sm_show.rename(columns=COLMAP_KIDS_SM)
