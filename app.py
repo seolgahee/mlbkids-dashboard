@@ -46,26 +46,31 @@ if not check_password():
 st.title("MLB 키즈 공식몰 분석 대시보드")
 
 # ======================
-# 기간 선택 (✅ 종료일 기준 최대 7일)
+# 기간 선택 (✅ 시작일 기준 최대 7일)
+# - 시작일 먼저 선택
+# - 종료일은 시작일~(시작일+6) 범위에서만 선택 가능
 # ======================
 c1, c2 = st.columns(2)
 
-end_dt = c2.date_input("종료일", value=date.today())
+start_dt = c1.date_input("시작일", value=date.today())
 
-min_start = end_dt - timedelta(days=6)  # 포함 7일(6일 전~당일)
-start_dt = c1.date_input(
-    "시작일 (최대 7일)",
-    value=min_start,
-    min_value=min_start,
-    max_value=end_dt
+max_end = start_dt + timedelta(days=6)  # 포함 7일(시작일~+6)
+end_dt = c2.date_input(
+    "종료일 (최대 7일)",
+    value=start_dt,
+    min_value=start_dt,
+    max_value=max_end
 )
 
-# 방어 로직
-if start_dt < min_start:
-    start_dt = min_start
-if start_dt > end_dt:
-    start_dt = end_dt
+# 방어 로직 (혹시라도 깨질 경우 대비)
+if end_dt < start_dt:
+    end_dt = start_dt
+if end_dt > max_end:
+    end_dt = max_end
 
+days = (end_dt - start_dt).days + 1
+
+st.caption(f"조회 기간: {start_dt.strftime('%Y-%m-%d')} ~ {end_dt.strftime('%Y-%m-%d')} (총 {days}일, 최대 7일)")
 st.caption("조회 기간은 최대 7일(포함)까지 선택 가능합니다. 대량 데이터 조회 시 로딩 지연이 발생할 수 있습니다.")
 st.caption("※ 최근 2일 데이터는 BigQuery 반영 지연으로 정확하지 않을 수 있습니다.")
 
@@ -205,7 +210,7 @@ def render_kpi_100pct_bar(df, value_col, order, value_unit=""):
 
     chart = (
         alt.Chart(chart_df)
-        .mark_bar(size=60)  # ✅ 더 두껍게
+        .mark_bar(size=60)
         .encode(
             x=alt.X("비중:Q", stack="normalize", axis=alt.Axis(format="%")),
             y=alt.Y("구분:N", title=None),
@@ -220,7 +225,7 @@ def render_kpi_100pct_bar(df, value_col, order, value_unit=""):
                 alt.Tooltip("값:Q", title="값", format=",")
             ]
         )
-        .properties(height=160)  # ✅ 영역도 키워서 두께 체감 업
+        .properties(height=160)
     )
 
     st.altair_chart(chart, use_container_width=True)
@@ -259,12 +264,11 @@ def render_cross_box(title: str, df: pd.DataFrame):
 
     chart_df = pd.DataFrame(rows)
 
-    # KPI와 톤 맞춤(키즈=파랑, 성인=빨강)
     palette = ["#4F81BD", "#C0504D"]
 
     chart = (
         alt.Chart(chart_df)
-        .mark_bar(size=60)  # ✅ 두껍게
+        .mark_bar(size=60)
         .encode(
             x=alt.X("비중:Q", stack="normalize", axis=alt.Axis(format="%")),
             y=alt.Y("구분:N", title=None),
@@ -380,7 +384,6 @@ if st.button("조회"):
             value_unit="원"
         )
 
-    # 1) 키즈 상품 기준 소스/매체 성과 TOP 10
     st.divider()
     st.subheader("키즈 상품 기준 소스/매체 성과 TOP 10")
     st.caption("*키즈 상품(상품ID 7%)을 1회 이상 조회 또는 구매한 사용자 기준")
@@ -394,7 +397,6 @@ if st.button("조회"):
         kids_sm_show = kids_sm_show.rename(columns=COLMAP_KIDS_SM)
     st.dataframe(kids_sm_show, use_container_width=True, hide_index=True)
 
-    # 2) 키즈 Top10 상품 성과 / 3) 키즈 상품 조회수 Top10
     st.divider()
     left, right = st.columns(2)
 
@@ -419,7 +421,6 @@ if st.button("조회"):
             kids_views_show = kids_views_show.rename(columns=COLMAP_KIDS_VIEWS)
         st.dataframe(kids_views_show, use_container_width=True, hide_index=True)
 
-    # 4) 키즈 매출 Top10 카테고리 / 5) 키즈 기획전 Top10
     st.divider()
     left2, right2 = st.columns(2)
 
@@ -452,7 +453,6 @@ if st.button("조회"):
             kids_promo_show = kids_promo_show.rename(columns=COLMAP_KIDS_PROMO)
         st.dataframe(kids_promo_show, use_container_width=True, hide_index=True)
 
-    # 교차 구매 비중 (✅ 여기까지도 차트로)
     st.divider()
     st.subheader("키즈/성인 광고 통한 교차 구매 비중")
 
