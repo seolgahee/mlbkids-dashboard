@@ -47,14 +47,10 @@ st.title("MLB 키즈 공식몰 분석 대시보드")
 
 # ======================
 # 기간 선택 (✅ 시작일 기준 최대 7일, ✅ 하루치 기본)
-# - 시작일 먼저 선택
-# - 종료일은 시작일~(시작일+6) 범위에서만 선택 가능
-# - 기본값: 종료일 = 시작일 (하루치)
 # ======================
 c1, c2 = st.columns(2)
 
 start_dt = c1.date_input("시작일", value=date.today())
-
 max_end = start_dt + timedelta(days=6)  # 포함 7일(시작일~+6)
 
 end_dt = c2.date_input(
@@ -81,47 +77,51 @@ params = {
     "end_date": end_dt.strftime("%Y%m%d"),
 }
 
+# ✅ 캐시 키 분리: '오늘 날짜'가 바뀌면 캐시 자동 무효화
+cache_day_key = date.today().strftime("%Y%m%d")
+
 # ======================
 # SQL 로더 (캐시)
+# - cache_day_key를 추가 인자로 받아 캐시 key 분리
 # ======================
 @st.cache_data(ttl=600)
-def load_users(p):
+def load_users(p, _cache_key):
     return run_sql_file("src/sql/section1_users_split.sql", p)
 
 @st.cache_data(ttl=600)
-def load_purchase_qty(p):
+def load_purchase_qty(p, _cache_key):
     return run_sql_file("src/sql/section1_purchase_qty_split.sql", p)
 
 @st.cache_data(ttl=600)
-def load_revenue(p):
+def load_revenue(p, _cache_key):
     return run_sql_file("src/sql/section1_revenue_split.sql", p)
 
 @st.cache_data(ttl=600)
-def load_kids_source_medium_top10(p):
+def load_kids_source_medium_top10(p, _cache_key):
     return run_sql_file("src/sql/section2_kids_conversion_source_medium_top10.sql", p)
 
 @st.cache_data(ttl=600)
-def load_kids_top10_product_performance(p):
+def load_kids_top10_product_performance(p, _cache_key):
     return run_sql_file("src/sql/section3_kids_top10_product_performance.sql", p)
 
 @st.cache_data(ttl=600)
-def load_kids_top10_product_views(p):
+def load_kids_top10_product_views(p, _cache_key):
     return run_sql_file("src/sql/section3_kids_top10_product_views.sql", p)
 
 @st.cache_data(ttl=600)
-def load_kids_revenue_top10_category(p):
+def load_kids_revenue_top10_category(p, _cache_key):
     return run_sql_file("src/sql/section4_kids_revenue_top10_category.sql", p)
 
 @st.cache_data(ttl=600)
-def load_kids_promo_top10(p):
+def load_kids_promo_top10(p, _cache_key):
     return run_sql_file("src/sql/section4_kids_promo_top10.sql", p)
 
 @st.cache_data(ttl=600)
-def load_kids_cross_revenue(p):
+def load_kids_cross_revenue(p, _cache_key):
     return run_sql_file("src/sql/section5_kids_revenue_cross.sql", p)
 
 @st.cache_data(ttl=600)
-def load_adult_cross_revenue(p):
+def load_adult_cross_revenue(p, _cache_key):
     return run_sql_file("src/sql/section5_adult_revenue_cross.sql", p)
 
 # ======================
@@ -341,18 +341,18 @@ COLMAP_KIDS_PROMO = {
 # ======================
 if st.button("조회"):
     with st.spinner("데이터 조회 중..."):
-        users_df = load_users(params)
-        qty_df = load_purchase_qty(params)
-        revenue_df = load_revenue(params)
+        users_df = load_users(params, cache_day_key)
+        qty_df = load_purchase_qty(params, cache_day_key)
+        revenue_df = load_revenue(params, cache_day_key)
 
-        kids_sm_df = load_kids_source_medium_top10(params)
-        kids_perf_df = load_kids_top10_product_performance(params)
-        kids_views_df = load_kids_top10_product_views(params)
-        kids_cat_df = load_kids_revenue_top10_category(params)
-        kids_promo_df = load_kids_promo_top10(params)
+        kids_sm_df = load_kids_source_medium_top10(params, cache_day_key)
+        kids_perf_df = load_kids_top10_product_performance(params, cache_day_key)
+        kids_views_df = load_kids_top10_product_views(params, cache_day_key)
+        kids_cat_df = load_kids_revenue_top10_category(params, cache_day_key)
+        kids_promo_df = load_kids_promo_top10(params, cache_day_key)
 
-        kids_cross_df = load_kids_cross_revenue(params)
-        adult_cross_df = load_adult_cross_revenue(params)
+        kids_cross_df = load_kids_cross_revenue(params, cache_day_key)
+        adult_cross_df = load_adult_cross_revenue(params, cache_day_key)
 
     col1, col2, col3 = st.columns(3)
 
