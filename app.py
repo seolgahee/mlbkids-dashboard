@@ -1,3 +1,6 @@
+# =========================
+# app.py (✅ 기획전명 하이퍼링크 적용 포함 / 전체 통째로)
+# =========================
 import streamlit as st
 from datetime import date, timedelta
 from src.db.snowflake import run_sql_file
@@ -296,11 +299,12 @@ def render_cross_box(title: str, df: pd.DataFrame):
 # ======================
 # 컬럼명 한글 매핑
 # ✅ 변경: 소스/매체 TOP10 테이블에 사용자수(USERS) 추가
+# ✅ 변경: 기획전 TOP10 테이블에 URL(PROMO_URL) 추가
 # ======================
 COLMAP_KIDS_SM = {
     "SOURCE_MEDIUM": "소스/매체",
     "INFLOW_TYPE": "유입 유형",
-    "USERS": "사용자수",   # ✅ 추가
+    "USERS": "사용자수",
     "SESSIONS": "세션수",
     "REVENUE": "매출",
 }
@@ -331,6 +335,7 @@ COLMAP_KIDS_PROMO = {
     "RANK": "순위",
     "PROMO_NO": "구분",
     "PROMO_NAME": "기획전명",
+    "PROMO_URL": "기획전 URL",  # ✅ 추가
     "PROMO_SESSIONS": "유입",
     "VIEW_SESSIONS": "상품 조회",
     "PURCHASE_SESSIONS": "구매",
@@ -392,11 +397,10 @@ if st.button("조회"):
     st.subheader("키즈 상품 기준 소스/매체 성과 TOP 10")
     st.caption("*키즈 상품(상품ID 7%)을 1회 이상 조회 또는 구매한 사용자 기준")
 
-    # ✅ 변경: USERS 컬럼 포맷(정수) 추가
     kids_sm_show = format_df_for_display(
         kids_sm_df,
         money_cols=["REVENUE", "revenue"],
-        int_cols=["USERS", "users", "SESSIONS", "sessions"]  # ✅ users 추가
+        int_cols=["USERS", "users", "SESSIONS", "sessions"]
     )
     if kids_sm_show is not None and not kids_sm_show.empty:
         kids_sm_show = kids_sm_show.rename(columns=COLMAP_KIDS_SM)
@@ -456,6 +460,18 @@ if st.button("조회"):
         )
         if kids_promo_show is not None and not kids_promo_show.empty:
             kids_promo_show = kids_promo_show.rename(columns=COLMAP_KIDS_PROMO)
+
+            # ✅ 기획전명에 행별 하이퍼링크 적용
+            if "기획전 URL" in kids_promo_show.columns and "기획전명" in kids_promo_show.columns:
+                kids_promo_show["기획전명"] = kids_promo_show.apply(
+                    lambda r: f"[{r['기획전명']}]({r['기획전 URL']})"
+                    if pd.notna(r["기획전 URL"]) and str(r["기획전 URL"]).strip() != ""
+                    else r["기획전명"],
+                    axis=1
+                )
+                # URL 컬럼은 표에서 숨김(원하면 drop 제거)
+                kids_promo_show = kids_promo_show.drop(columns=["기획전 URL"])
+
         st.dataframe(kids_promo_show, use_container_width=True, hide_index=True)
 
     st.divider()
