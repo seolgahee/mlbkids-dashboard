@@ -46,23 +46,25 @@ if not check_password():
 st.title("MLB 키즈 공식몰 분석 대시보드")
 
 # ======================
-# 기간 선택 (✅ 시작일 기준 최대 7일)
+# 기간 선택 (✅ 시작일 기준 최대 7일, ✅ 하루치 기본)
 # - 시작일 먼저 선택
 # - 종료일은 시작일~(시작일+6) 범위에서만 선택 가능
+# - 기본값: 종료일 = 시작일 (하루치)
 # ======================
 c1, c2 = st.columns(2)
 
 start_dt = c1.date_input("시작일", value=date.today())
 
 max_end = start_dt + timedelta(days=6)  # 포함 7일(시작일~+6)
+
 end_dt = c2.date_input(
-    "종료일 (최대 7일)",
-    value=start_dt,
-    min_value=start_dt,
-    max_value=max_end
+    "종료일 (시작일과 같게 선택하면 하루치)",
+    value=start_dt,          # ✅ 하루치 기본
+    min_value=start_dt,      # ✅ 시작일 이전 선택 불가
+    max_value=max_end        # ✅ 최대 7일 제한
 )
 
-# 방어 로직 (혹시라도 깨질 경우 대비)
+# 방어 로직
 if end_dt < start_dt:
     end_dt = start_dt
 if end_dt > max_end:
@@ -71,7 +73,7 @@ if end_dt > max_end:
 days = (end_dt - start_dt).days + 1
 
 st.caption(f"조회 기간: {start_dt.strftime('%Y-%m-%d')} ~ {end_dt.strftime('%Y-%m-%d')} (총 {days}일, 최대 7일)")
-st.caption("조회 기간은 최대 7일(포함)까지 선택 가능합니다. 대량 데이터 조회 시 로딩 지연이 발생할 수 있습니다.")
+st.caption("조회 기간은 최대 7일까지 설정할 수 있습니다. 데이터 양에 따라 조회 완료까지 최대 3분 정도 소요될 수 있으니 잠시만 기다려 주세요.")
 st.caption("※ 최근 2일 데이터는 BigQuery 반영 지연으로 정확하지 않을 수 있습니다.")
 
 params = {
