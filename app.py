@@ -10,6 +10,54 @@ st.set_page_config(
 )
 
 # ======================
+# 🎨 UI 공통 CSS (섹션 카드)
+# ======================
+st.markdown(
+    """
+    <style>
+      .section-card {
+        background: #FBFBFD; /* ✅ 배경톤 살짝 회색 */
+        border: 1px solid rgba(0,0,0,0.08);
+        border-left: 8px solid var(--accent);
+        border-radius: 14px;
+        padding: 16px 18px 14px 18px;
+        margin: 10px 0 14px 0;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+      }
+      .section-title {
+        font-size: 20px;
+        font-weight: 800;
+        margin: 0 0 4px 0;
+        line-height: 1.2;
+      }
+      .section-sub {
+        color: rgba(0,0,0,0.55);
+        font-size: 12px;
+        margin: 0 0 10px 0;
+      }
+      .warn-text {
+        color: #FF4B4B;
+        font-weight: 800;
+      }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+def section_start(title: str, subtitle: str = "", accent: str = "#4F81BD"):
+    st.markdown(
+        f"""
+        <div class="section-card" style="--accent:{accent};">
+          <div class="section-title">{title}</div>
+          <div class="section-sub">{subtitle}</div>
+        """,
+        unsafe_allow_html=True
+    )
+
+def section_end():
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# ======================
 # 🔐 로그인 체크
 # ======================
 def check_password():
@@ -69,7 +117,12 @@ days = (end_dt - start_dt).days + 1
 
 st.caption(f"조회 기간: {start_dt.strftime('%Y-%m-%d')} ~ {end_dt.strftime('%Y-%m-%d')} (총 {days}일, 최대 7일)")
 st.caption("조회 기간은 최대 7일까지 설정할 수 있습니다. 데이터 양에 따라 조회 완료까지 최대 3분 정도 소요될 수 있으니 잠시만 기다려 주세요.")
-st.caption("※ 최근 2일 데이터는 BigQuery 반영 지연으로 정확하지 않을 수 있습니다.")
+
+# ✅ 빨간색 + 볼드 경고 문구
+st.markdown(
+    "<span class='warn-text'>※ 최근 2일 데이터는 BigQuery 반영 지연으로 정확하지 않을 수 있습니다.</span>",
+    unsafe_allow_html=True
+)
 
 params = {
     "start_date": start_dt.strftime("%Y%m%d"),
@@ -324,12 +377,11 @@ COLMAP_KIDS_CAT = {
     "REVENUE": "매출",
 }
 
-# ✅ promo_url을 LinkColumn으로 쓸거라 컬럼 유지
 COLMAP_KIDS_PROMO = {
     "RANK": "순위",
     "PROMO_NO": "구분",
     "PROMO_NAME": "기획전명",
-    "PROMO_URL": "기획전 링크",   # ✅ LinkColumn 대상
+    "PROMO_URL": "기획전 링크",
     "PROMO_SESSIONS": "유입",
     "VIEW_SESSIONS": "상품 조회",
     "PURCHASE_SESSIONS": "구매",
@@ -355,111 +407,76 @@ if st.button("조회"):
         kids_cross_df = load_kids_cross_revenue(params, cache_day_key)
         adult_cross_df = load_adult_cross_revenue(params, cache_day_key)
 
+    # 섹션1: KPI
+    section_start("요약 KPI", "전체/키즈 전환 기준 핵심 지표", accent="#4F81BD")
     col1, col2, col3 = st.columns(3)
 
     with col1:
         st.subheader("총 사용자수")
         st.caption("*전체 기준")
-        render_kpi_100pct_bar(
-            users_df,
-            value_col="USERS",
-            order=["Non-paid", "키즈 광고", "성인 광고"],
-            value_unit="명"
-        )
+        render_kpi_100pct_bar(users_df, "USERS", ["Non-paid", "키즈 광고", "성인 광고"], "명")
 
     with col2:
         st.subheader("구매한 상품 (구매수)")
         st.caption("*키즈 전환 기준")
-        render_kpi_100pct_bar(
-            qty_df,
-            value_col="PURCHASE_QTY",
-            order=["키즈 광고가 아닌것", "키즈 광고"],
-            value_unit="건"
-        )
+        render_kpi_100pct_bar(qty_df, "PURCHASE_QTY", ["키즈 광고가 아닌것", "키즈 광고"], "건")
 
     with col3:
         st.subheader("상품 수익 (매출)")
         st.caption("*키즈 전환 기준")
-        render_kpi_100pct_bar(
-            revenue_df,
-            value_col="REVENUE",
-            order=["키즈 광고가 아닌것", "키즈 광고"],
-            value_unit="원"
-        )
+        render_kpi_100pct_bar(revenue_df, "REVENUE", ["키즈 광고가 아닌것", "키즈 광고"], "원")
+    section_end()
 
-    # 1) 키즈 상품 기준 소스/매체 성과 TOP 10
-    st.divider()
-    st.subheader("키즈 상품 기준 소스/매체 성과 TOP 10")
-    st.caption("*키즈 상품(상품ID 7%)을 1회 이상 조회 또는 구매한 사용자 기준")
-
-    kids_sm_show = format_df_for_display(
-        kids_sm_df,
-        money_cols=["REVENUE", "revenue"],
-        int_cols=["USERS", "users", "SESSIONS", "sessions"]
-    )
+    # 섹션2
+    section_start("키즈 상품 기준 소스/매체 성과 TOP 10", "*키즈 상품(상품ID 7%)을 1회 이상 조회 또는 구매한 사용자 기준", accent="#9BBB59")
+    kids_sm_show = format_df_for_display(kids_sm_df, money_cols=["REVENUE", "revenue"], int_cols=["USERS", "users", "SESSIONS", "sessions"])
     if kids_sm_show is not None and not kids_sm_show.empty:
         kids_sm_show = kids_sm_show.rename(columns=COLMAP_KIDS_SM)
     st.dataframe(kids_sm_show, use_container_width=True, hide_index=True)
+    section_end()
 
-    # 2) 키즈 Top10 상품 성과 / 3) 키즈 상품 조회수 Top10
-    st.divider()
+    # 섹션3
+    section_start("키즈 상품 TOP 10", "구매 성과 / 조회수", accent="#8064A2")
     left, right = st.columns(2)
 
     with left:
         st.subheader("키즈 TOP 10 상품 성과")
-        kids_perf_show = format_df_for_display(
-            kids_perf_df,
-            money_cols=["REVENUE", "revenue"],
-            int_cols=["QUANTITY", "quantity", "RANK", "rank"]
-        )
+        kids_perf_show = format_df_for_display(kids_perf_df, money_cols=["REVENUE", "revenue"], int_cols=["QUANTITY", "quantity", "RANK", "rank"])
         if kids_perf_show is not None and not kids_perf_show.empty:
             kids_perf_show = kids_perf_show.rename(columns=COLMAP_KIDS_PERF)
         st.dataframe(kids_perf_show, use_container_width=True, hide_index=True)
 
     with right:
         st.subheader("키즈 상품 조회수 TOP 10")
-        kids_views_show = format_df_for_display(
-            kids_views_df,
-            int_cols=["VIEW_COUNT", "view_count", "RANK", "rank"]
-        )
+        kids_views_show = format_df_for_display(kids_views_df, int_cols=["VIEW_COUNT", "view_count", "RANK", "rank"])
         if kids_views_show is not None and not kids_views_show.empty:
             kids_views_show = kids_views_show.rename(columns=COLMAP_KIDS_VIEWS)
         st.dataframe(kids_views_show, use_container_width=True, hide_index=True)
+    section_end()
 
-    # 4) 키즈 매출 Top10 카테고리 / 5) 키즈 기획전 Top10 (✅ LinkColumn 적용)
-    st.divider()
+    # 섹션4
+    section_start("키즈 매출 TOP 10", "카테고리 / 기획전", accent="#C0504D")
     left2, right2 = st.columns(2)
 
     with left2:
         st.subheader("키즈 매출 TOP 10 카테고리")
-        kids_cat_show = format_df_for_display(
-            kids_cat_df,
-            money_cols=["REVENUE", "revenue"],
-            int_cols=["QUANTITY", "quantity", "RANK", "rank"]
-        )
+        kids_cat_show = format_df_for_display(kids_cat_df, money_cols=["REVENUE", "revenue"], int_cols=["QUANTITY", "quantity", "RANK", "rank"])
         if kids_cat_show is not None and not kids_cat_show.empty:
             kids_cat_show = kids_cat_show.rename(columns=COLMAP_KIDS_CAT)
         st.dataframe(kids_cat_show, use_container_width=True, hide_index=True)
 
     with right2:
         st.subheader("키즈 기획전 TOP 10")
-
         kids_promo_show = format_df_for_display(
             kids_promo_df,
             money_cols=["REVENUE", "revenue"],
-            int_cols=[
-                "RANK", "rank",
-                "PROMO_SESSIONS", "promo_sessions",
-                "VIEW_SESSIONS", "view_sessions",
-                "PURCHASE_SESSIONS", "purchase_sessions",
-            ],
+            int_cols=["RANK", "rank", "PROMO_SESSIONS", "promo_sessions", "VIEW_SESSIONS", "view_sessions", "PURCHASE_SESSIONS", "purchase_sessions"],
             pct_cols=["PURCHASE_CVR_PCT", "purchase_cvr_pct"],
             pct_decimals=2
         )
         if kids_promo_show is not None and not kids_promo_show.empty:
             kids_promo_show = kids_promo_show.rename(columns=COLMAP_KIDS_PROMO)
 
-            # ✅ 클릭 가능한 링크 컬럼 (새 탭/새 창은 브라우저 설정에 따름)
             st.data_editor(
                 kids_promo_show,
                 use_container_width=True,
@@ -476,11 +493,10 @@ if st.button("조회"):
             )
         else:
             st.dataframe(kids_promo_show, use_container_width=True, hide_index=True)
+    section_end()
 
-    # 교차 구매 비중
-    st.divider()
-    st.subheader("키즈/성인 광고 통한 교차 구매 비중")
-
+    # 섹션5
+    section_start("키즈/성인 광고 통한 교차 구매 비중", "같은 구매에서 광고 기여 교차 비중", accent="#4F81BD")
     box_l, box_r = st.columns(2)
 
     with box_l:
@@ -488,6 +504,7 @@ if st.button("조회"):
 
     with box_r:
         render_cross_box("성인 매출", adult_cross_df)
+    section_end()
 
 else:
     st.info("기간 선택 후 ‘조회’를 눌러주세요.")
