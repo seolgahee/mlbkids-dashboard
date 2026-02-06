@@ -120,7 +120,7 @@ st.caption("조회 기간은 최대 7일까지 설정할 수 있습니다. 데�
 
 # ✅ 빨간색 + 볼드 경고 문구
 st.markdown(
-    "<span class='warn-text'>※ 최근 2일 데이터는 BigQuery 반영 지연으로 정확하지 않을 수 있습니다.</span>",
+    "<span class='warn-text'>※ BigQuery 데이터 반영 지연으로 인해, 최근 2~3일 데이터가 누락되었거나 조회가 어려울 수 있습니다.</span>",
     unsafe_allow_html=True
 )
 
