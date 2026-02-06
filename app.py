@@ -19,7 +19,7 @@ if "menu" not in st.session_state:
     st.session_state.menu = "요약"
 
 # ======================
-# 🎨 UI 공통 CSS (배경 + 섹션카드 + 서브카드 + 탭 스타일)
+# 🎨 UI 공통 CSS (배경 + 섹션카드 + 서브카드 + 탭 pill 스타일)
 # ======================
 st.markdown(
     """
@@ -61,19 +61,50 @@ st.markdown(
         font-weight: 800;
       }
 
-      /* 탭 폰트 크게 + 선택 시 빨간색 + 볼드 */
-      div[data-baseweb="tab"] > button {
-        font-size: 18px !important;
-        font-weight: 700 !important;
-      }
-      div[data-baseweb="tab"] > button[aria-selected="true"] {
-        color: #FF4B4B !important;
-        font-weight: 900 !important;
+      /* ============================
+         ✅ Tabs: 네모 pill 버튼 스타일
+         ============================ */
+
+      /* 탭 리스트 간격/하단 라인 제거 */
+      div[data-baseweb="tabs"] [role="tablist"]{
+        gap: 10px;
+        border-bottom: none !important;
+        padding-bottom: 6px;
       }
 
-      /* 탭 하단 라인도 빨간 느낌(가능한 범위) */
-      div[data-baseweb="tabs"] div[role="tablist"] {
-        border-bottom: 1px solid rgba(0,0,0,0.08);
+      /* 탭 버튼 기본(미선택) */
+      div[data-baseweb="tabs"] button[role="tab"]{
+        font-size: 18px !important;
+        font-weight: 800 !important;
+        padding: 10px 14px !important;
+        border-radius: 12px !important;                 /* pill 느낌 */
+        background: rgba(0,0,0,0.04) !important;        /* 연한 회색 */
+        border: 1px solid rgba(0,0,0,0.08) !important;  /* 얇은 테두리 */
+        color: rgba(0,0,0,0.70) !important;
+        transition: all 120ms ease;
+      }
+
+      /* hover */
+      div[data-baseweb="tabs"] button[role="tab"]:hover{
+        background: rgba(0,0,0,0.06) !important;
+        transform: translateY(-1px);
+      }
+
+      /* 선택된 탭 */
+      div[data-baseweb="tabs"] button[role="tab"][aria-selected="true"]{
+        background: rgba(255,75,75,0.12) !important;    /* 연한 레드 */
+        border: 1px solid rgba(255,75,75,0.55) !important;
+        color: #FF4B4B !important;
+        font-weight: 900 !important;
+        box-shadow: 0 2px 8px rgba(255,75,75,0.12);
+      }
+
+      /* baseweb 기본 underline/indicator 숨기기 (버전별 대응) */
+      div[data-baseweb="tabs"] div[role="tablist"] > div{
+        background: transparent !important;
+      }
+      div[data-baseweb="tabs"] [data-baseweb="tab-highlight"]{
+        display: none !important;
       }
     </style>
     """,
@@ -372,7 +403,10 @@ with st.sidebar:
 
     days = (end_dt - start_dt).days + 1
     st.caption(f"{start_dt} ~ {end_dt} (총 {days}일, 최대 7일)")
-    st.markdown("<span class='warn-text'>※ BigQuery 데이터 반영 지연으로 인해, 최근 2~3일 데이터가 누락되었거나 조회가 어려움 </span>", unsafe_allow_html=True)
+    st.markdown(
+        "<span class='warn-text'>※ BigQuery 데이터 반영 지연으로 인해, 최근 2~3일 데이터가 누락되었거나 조회가 어려울 수 있습니다.</span>",
+        unsafe_allow_html=True
+    )
 
     params = {
         "start_date": start_dt.strftime("%Y%m%d"),
@@ -483,7 +517,7 @@ elif menu == "유입":
     st.dataframe(kids_sm_show, use_container_width=True, hide_index=True)
     section_end()
 
-# 3) 상품 → 카테고리 TOP10, 상품 구매성과 TOP10, 상품 조회수 TOP10 (탭으로 아래에 나타나게)
+# 3) 상품 → 카테고리 TOP10, 상품 구매성과 TOP10, 상품 조회수 TOP10 (탭)
 elif menu == "상품":
     tab1, tab2, tab3 = st.tabs(["카테고리 TOP10", "상품 구매성과 TOP10", "상품 조회수 TOP10"])
 
