@@ -44,6 +44,9 @@ WITH promo_map AS (
   UNION ALL SELECT '1601', 'event', '소히조이 사전알림', '/display/promotions/event/1601'
 
   UNION ALL SELECT '1600', 'collection', '바시티 에프터 스쿨', '/display/promotions/collection/1600'
+  UNION ALL SELECT '1607', 'collection', '바시티 아우터', '/display/promotions/collection/1607'
+  UNION ALL SELECT '1628', 'collection', '메가베어 프렌즈 런칭', '/display/promotions/collection/1628'
+  UNION ALL SELECT '1642', 'event', '설선물 기획전', '/display/promotions/event/1642'
 ),
 
 /* page_view / view_item에서 session_id + page_location 확보 */
