@@ -1,32 +1,38 @@
 /* ==========================================================
-   sectionX_kids_source_medium_ga4_align.sql
-   ✅ GA4 정합용: "상품단(아이템ID 7*) + 세션 소스/매체" 기준 TOP10
-   - 모집단: purchase 이벤트에서 item_id LIKE '7%'
-   - 매출: purchase.items 중 item_id '7%'만 합산
-   - users: 구매 발생 사용자수 (distinct user_pseudo_id)
-   - sessions: 구매 발생 세션수 (distinct user_pseudo_id + session_id)
-   - source/medium: session_start 우선, 없으면 page_view로 보강(첫 ts)
+   section2_kids_conversion_source_medium_top10.sql
+   ✅ GA4 유사 정합 (FIX)
+   - users/sessions: view_item(7%) 세션 기준
+   - revenue: purchase items(7%) 매출 기준
+   - source/medium: session_start 우선, 없으면 page_view로 보강
+   - 과집계 방지: (user, session) 단위로 먼저 dedup 후 join
    ========================================================== */
 
 WITH
-/* 1) purchase에서 세션ID 추출 (이벤트 단위) */
-purchase_sess AS (
+/* 1) 키즈 상품(7%) view_item 발생 세션 (GA4의 사용자/세션 분모에 가깝게) */
+kids_view_sessions_raw AS (
   SELECT
     e.USER_PSEUDO_ID,
-    e.EVENT_TIMESTAMP,
     MAX(IFF(ep.value:key::STRING='ga_session_id',
             ep.value:value:int_value::NUMBER, NULL)) AS session_id
   FROM FNF.STRG_GA.EVENTS e,
-       LATERAL FLATTEN(input => e.EVENT_PARAMS) ep
+       LATERAL FLATTEN(input=>e.EVENT_PARAMS) ep,
+       LATERAL FLATTEN(input=>e.ITEMS) it
   WHERE e.P_BRAND='M'
     AND e.P_DATE BETWEEN %(start_date)s AND %(end_date)s
-    AND e.EVENT_NAME='purchase'
+    AND e.EVENT_NAME='view_item'
+    AND it.value:item_id::STRING LIKE '7%%'
   GROUP BY e.USER_PSEUDO_ID, e.EVENT_TIMESTAMP
   HAVING session_id IS NOT NULL
 ),
 
-/* 2) purchase 아이템에서 "키즈(7%) 매출"만 합산 (이벤트 단위) */
-purchase_kids_rev AS (
+kids_view_sess AS (
+  SELECT USER_PSEUDO_ID, session_id
+  FROM kids_view_sessions_raw
+  GROUP BY 1,2
+),
+
+/* 2) 키즈 상품(7%) purchase 매출(아이템 기준) */
+kids_purchase_event_rev AS (
   SELECT
     e.USER_PSEUDO_ID,
     e.EVENT_TIMESTAMP,
@@ -40,46 +46,51 @@ purchase_kids_rev AS (
           )
         ELSE 0
       END
-    ) AS kids_revenue
+    ) AS revenue
   FROM FNF.STRG_GA.EVENTS e,
-       LATERAL FLATTEN(input => e.ITEMS) it
+       LATERAL FLATTEN(input=>e.ITEMS) it
   WHERE e.P_BRAND='M'
     AND e.P_DATE BETWEEN %(start_date)s AND %(end_date)s
     AND e.EVENT_NAME='purchase'
   GROUP BY e.USER_PSEUDO_ID, e.EVENT_TIMESTAMP
 ),
 
-/* 3) purchase 이벤트 단위로 결합 + kids_revenue>0만 남김(= 실제로 7% 구매된 이벤트만) */
-kids_purchase_events AS (
+/* 3) purchase 이벤트에서 session_id 추출 (EVENT_PARAMS에서) */
+purchase_event_sess AS (
+  SELECT
+    e.USER_PSEUDO_ID,
+    e.EVENT_TIMESTAMP,
+    MAX(IFF(ep.value:key::STRING='ga_session_id',
+            ep.value:value:int_value::NUMBER, NULL)) AS session_id
+  FROM FNF.STRG_GA.EVENTS e,
+       LATERAL FLATTEN(input=>e.EVENT_PARAMS) ep
+  WHERE e.P_BRAND='M'
+    AND e.P_DATE BETWEEN %(start_date)s AND %(end_date)s
+    AND e.EVENT_NAME='purchase'
+  GROUP BY e.USER_PSEUDO_ID, e.EVENT_TIMESTAMP
+  HAVING session_id IS NOT NULL
+),
+
+/* 4) purchase 이벤트 단위로 결합 후, 세션 단위로 매출 집계 (user,session 1행) */
+kids_revenue_sess AS (
   SELECT
     ps.USER_PSEUDO_ID,
     ps.session_id,
-    ps.EVENT_TIMESTAMP,
-    pr.kids_revenue
-  FROM purchase_sess ps
-  JOIN purchase_kids_rev pr
-    ON ps.USER_PSEUDO_ID = pr.USER_PSEUDO_ID
+    SUM(COALESCE(pr.revenue,0)) AS revenue
+  FROM purchase_event_sess ps
+  JOIN kids_purchase_event_rev pr
+    ON ps.USER_PSEUDO_ID  = pr.USER_PSEUDO_ID
    AND ps.EVENT_TIMESTAMP = pr.EVENT_TIMESTAMP
-  WHERE COALESCE(pr.kids_revenue,0) > 0
-),
-
-/* 4) 구매 세션(사용자+세션) 단위로 매출 합산 */
-kids_purchase_sessions AS (
-  SELECT
-    USER_PSEUDO_ID,
-    session_id,
-    SUM(kids_revenue) AS kids_revenue
-  FROM kids_purchase_events
+  WHERE COALESCE(pr.revenue,0) > 0  -- 7% 상품이 실제로 팔린 이벤트만
   GROUP BY 1,2
 ),
 
-/* 5) 세션 시작 시점의 source/medium/campaign 확보
-   - GA4 세션 소스/매체는 보통 session_start 기준이 맞음
-   - 누락 시 page_view로 보강 */
+/* 5) session_start 기반 소스/매체 (없으면 page_view로 보강) */
 session_start_dim AS (
   SELECT
     e.USER_PSEUDO_ID,
-    MAX(IFF(ep.value:key::STRING='ga_session_id', ep.value:value:int_value::NUMBER, NULL)) AS session_id,
+    MAX(IFF(ep.value:key::STRING='ga_session_id',
+            ep.value:value:int_value::NUMBER, NULL)) AS session_id,
 
     COALESCE(NULLIF(GET(e.COLLECTED_TRAFFIC_SOURCE[0],'manual_source')::STRING,''),
              NULLIF(GET(e.TRAFFIC_SOURCE[0],'source')::STRING,''), '(not set)') AS source,
@@ -92,9 +103,8 @@ session_start_dim AS (
 
     MIN(e.EVENT_TIMESTAMP) AS ts
   FROM FNF.STRG_GA.EVENTS e,
-       LATERAL FLATTEN(input => e.EVENT_PARAMS) ep
+       LATERAL FLATTEN(input=>e.EVENT_PARAMS) ep
   WHERE e.P_BRAND='M'
-    /* 세션 시작이 start_date 전날에 찍힐 수 있어 버퍼 */
     AND e.P_DATE BETWEEN TO_CHAR(DATEADD(day,-1,TO_DATE(%(start_date)s,'YYYYMMDD')),'YYYYMMDD')
                      AND %(end_date)s
     AND e.EVENT_NAME='session_start'
@@ -105,7 +115,8 @@ session_start_dim AS (
 page_view_dim AS (
   SELECT
     e.USER_PSEUDO_ID,
-    MAX(IFF(ep.value:key::STRING='ga_session_id', ep.value:value:int_value::NUMBER, NULL)) AS session_id,
+    MAX(IFF(ep.value:key::STRING='ga_session_id',
+            ep.value:value:int_value::NUMBER, NULL)) AS session_id,
 
     COALESCE(NULLIF(GET(e.COLLECTED_TRAFFIC_SOURCE[0],'manual_source')::STRING,''),
              NULLIF(GET(e.TRAFFIC_SOURCE[0],'source')::STRING,''), '(not set)') AS source,
@@ -118,7 +129,7 @@ page_view_dim AS (
 
     MIN(e.EVENT_TIMESTAMP) AS ts
   FROM FNF.STRG_GA.EVENTS e,
-       LATERAL FLATTEN(input => e.EVENT_PARAMS) ep
+       LATERAL FLATTEN(input=>e.EVENT_PARAMS) ep
   WHERE e.P_BRAND='M'
     AND e.P_DATE BETWEEN TO_CHAR(DATEADD(day,-1,TO_DATE(%(start_date)s,'YYYYMMDD')),'YYYYMMDD')
                      AND %(end_date)s
@@ -143,11 +154,10 @@ session_dim_one AS (
   QUALIFY ROW_NUMBER() OVER (PARTITION BY USER_PSEUDO_ID, session_id ORDER BY ts ASC)=1
 )
 
+/* 6) 최종: users/sessions는 view 기준, revenue는 purchase(7%) 기준 */
 SELECT
-  /* 소스/매체 */
   COALESCE(d.source,'(not set)') || ' / ' || COALESCE(d.medium,'(not set)') AS source_medium,
 
-  /* 유입유형: GA4 정합용(원하면 GA default channel group로도 확장 가능) */
   CASE
     WHEN LOWER(COALESCE(d.source,'')) = 'datarize'
      AND LOWER(COALESCE(d.medium,'')) = 'brandmessage' THEN '광고'
@@ -159,17 +169,19 @@ SELECT
     ELSE '자연'
   END AS inflow_type,
 
-  /* ✅ GA4 상품단 기준: 구매 사용자/세션 */
-  COUNT(DISTINCT k.USER_PSEUDO_ID) AS users,
-  COUNT(DISTINCT k.USER_PSEUDO_ID || '-' || k.session_id) AS sessions,
+  COUNT(DISTINCT v.USER_PSEUDO_ID) AS users,
+  COUNT(DISTINCT v.USER_PSEUDO_ID || '-' || v.session_id) AS sessions,
 
-  /* ✅ GA4 상품단 기준: item_id 7% 구매 매출 */
-  SUM(k.kids_revenue) AS revenue
+  /* ✅ (user,session) 1행인 r를 (user,session) 1행인 v에 붙이므로 과집계 없음 */
+  COALESCE(SUM(r.revenue),0) AS revenue
 
-FROM kids_purchase_sessions k
+FROM kids_view_sess v
 LEFT JOIN session_dim_one d
-  ON k.USER_PSEUDO_ID=d.USER_PSEUDO_ID
- AND k.session_id=d.session_id
+  ON v.USER_PSEUDO_ID=d.USER_PSEUDO_ID
+ AND v.session_id=d.session_id
+LEFT JOIN kids_revenue_sess r
+  ON v.USER_PSEUDO_ID=r.USER_PSEUDO_ID
+ AND v.session_id=r.session_id
 
 GROUP BY 1,2
 ORDER BY revenue DESC, sessions DESC
