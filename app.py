@@ -194,6 +194,13 @@ def load_kids_cross_revenue(p, _cache_key): return run_sql_file("src/sql/section
 @st.cache_data(ttl=600)
 def load_adult_cross_revenue(p, _cache_key): return run_sql_file("src/sql/section5_adult_revenue_cross.sql", p)
 
+# ✅ 추가: 교차구매 TOP5 소스/매체 (매출 + 유입세션)
+@st.cache_data(ttl=600)
+def load_kids_cross_top5_sm(p, _cache_key): return run_sql_file("src/sql/section5_kids_cross_top5_sm.sql", p)
+
+@st.cache_data(ttl=600)
+def load_adult_cross_top5_sm(p, _cache_key): return run_sql_file("src/sql/section5_adult_cross_top5_sm.sql", p)
+
 # ======================
 # 표 포맷 유틸
 # ======================
@@ -379,6 +386,20 @@ COLMAP_KIDS_PROMO = {
     "REVENUE": "매출",
 }
 
+# ✅ 추가: 교차구매 TOP5 소스/매체 표 컬럼
+COLMAP_CROSS_TOP5_SM = {
+    # 대문자 대비
+    "SOURCE": "소스",
+    "MEDIUM": "매체",
+    "REVENUE": "매출",
+    "INFLOW_SESSIONS": "유입세션",
+    # 소문자 대비
+    "source": "소스",
+    "medium": "매체",
+    "revenue": "매출",
+    "inbound_sessions": "유입세션",
+}
+
 # ======================
 # ✅ 사이드바: 날짜 선택 → 조회 버튼 → 메뉴(아래)
 # ======================
@@ -436,6 +457,10 @@ with st.sidebar:
                 "kids_promo_df": load_kids_promo_top10(params, cache_day_key),
                 "kids_cross_df": load_kids_cross_revenue(params, cache_day_key),
                 "adult_cross_df": load_adult_cross_revenue(params, cache_day_key),
+
+                # ✅ 추가: 교차구매 TOP5 소스/매체 (매출 + 유입세션)
+                "kids_cross_top5_df": load_kids_cross_top5_sm(params, cache_day_key),
+                "adult_cross_top5_df": load_adult_cross_top5_sm(params, cache_day_key),
             }
             st.session_state.loaded = True
 
@@ -469,6 +494,10 @@ kids_promo_df = st.session_state.data.get("kids_promo_df")
 
 kids_cross_df = st.session_state.data.get("kids_cross_df")
 adult_cross_df = st.session_state.data.get("adult_cross_df")
+
+# ✅ 추가
+kids_cross_top5_df = st.session_state.data.get("kids_cross_top5_df")
+adult_cross_top5_df = st.session_state.data.get("adult_cross_top5_df")
 
 # ======================
 # ✅ 메뉴 선택 시, 아래(메인 영역)에 해당 화면만 노출
@@ -595,16 +624,58 @@ elif menu == "기획전":
 
     section_end()
 
-# 5) 교차구매 → 유지
+# 5) 교차구매 → 교차구매 비중 + TOP5(유입세션/매출)
 elif menu == "교차구매":
     tab1, tab2 = st.tabs(["키즈 매출", "성인 매출"])
 
+    # ================================
+    # 🔵 키즈 매출 기준
+    # ================================
     with tab1:
         section_start("키즈/성인 광고 통한 교차 구매 비중", "키즈 매출 기준", accent="#4F81BD")
         render_cross_box("키즈 매출", kids_cross_df)
+
+        st.markdown("#### 성인광고 → 키즈매출 소스/매체 TOP5 (유입세션/매출)")
+
+        kids_top5_show = format_df_for_display(
+            kids_cross_top5_df,
+            money_cols=["REVENUE", "revenue"],
+            int_cols=["INFLOW_SESSIONS", "inbound_sessions"]
+        )
+
+        if kids_top5_show is not None and not kids_top5_show.empty:
+            kids_top5_show = kids_top5_show.rename(columns=COLMAP_CROSS_TOP5_SM)
+
+            # ✅ 컬럼 순서 고정
+            want_cols = ["소스", "매체", "유입세션", "매출"]
+            kids_top5_show = kids_top5_show[[c for c in want_cols if c in kids_top5_show.columns]]
+
+        st.dataframe(kids_top5_show, use_container_width=True, hide_index=True)
+
         section_end()
 
+    # ================================
+    # 🔴 성인 매출 기준
+    # ================================
     with tab2:
         section_start("키즈/성인 광고 통한 교차 구매 비중", "성인 매출 기준", accent="#4F81BD")
         render_cross_box("성인 매출", adult_cross_df)
+
+        st.markdown("#### 키즈광고 → 성인매출 소스/매체 TOP5 (유입세션/매출)")
+
+        adult_top5_show = format_df_for_display(
+            adult_cross_top5_df,
+            money_cols=["REVENUE", "revenue"],
+            int_cols=["INFLOW_SESSIONS", "inbound_sessions"]
+        )
+
+        if adult_top5_show is not None and not adult_top5_show.empty:
+            adult_top5_show = adult_top5_show.rename(columns=COLMAP_CROSS_TOP5_SM)
+
+            # ✅ 컬럼 순서 고정
+            want_cols = ["소스", "매체", "유입세션", "매출"]
+            adult_top5_show = adult_top5_show[[c for c in want_cols if c in adult_top5_show.columns]]
+
+        st.dataframe(adult_top5_show, use_container_width=True, hide_index=True)
+
         section_end()
